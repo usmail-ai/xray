@@ -345,3 +345,27 @@ test('push and feed_push ride from the seat to GitHub with their own words', () 
   assert.deepEqual([...L.eventColor({ kind: 'feed_push', from: 'mill' })], [88, 210, 180]);
   assert.equal(L.headline({ repo: '0xRayAI/xray', kind: 'feed_push' }), 'xray \u00b7 live-wire push');
 });
+
+test('ambient replay loop: dimmed overlay every 10 s, visual only, toggle + ?spectrum=0 + reduced motion', () => {
+  const html = readFileSync(path.join(liveDir, 'index.html'), 'utf8');
+  for (const s of [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1])) assert.doesNotThrow(() => new Function(s));
+  assert.match(html, /AMBIENT_EVERY_MS = 10000, AMBIENT_MS = 5000, AMBIENT_WINDOW_MS = 5 \* 60 \* 1000, AMBIENT_ALPHA = 0\.4/);
+  assert.match(html, /var ambientOn = !reduced && !\/\[\?&\]spectrum=0\(&\|\$\)\/\.test\(location\.search\);/);
+  assert.match(html, /<input id="ambient" type="checkbox" checked>/);
+  assert.match(html, /if \(!ambientOn \|\| !state\.live \|\| document\.hidden\)/);
+  assert.match(html, /ctx\.globalAlpha = AMBIENT_ALPHA; ghosts\.forEach\(drawPing\); ctx\.globalAlpha = 1; \}\n    pings\.forEach\(drawPing\);/);
+  const body = html.split('function ambientPings(nowWall) {')[1].split('function draw(')[0];
+  assert.doesNotMatch(body, /state\.(live|t)\s*=|speed\s*=|rewindTo|goLive|fetch|setInterval|setTimeout|flashes/);
+});
+
+test('replay loop look: rainbow trail only on replay pings, SPECTRUM tag beside (never replacing) the pill', () => {
+  const html = readFileSync(path.join(liveDir, 'index.html'), 'utf8');
+  for (const s of [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1])) assert.doesNotThrow(() => new Function(s));
+  assert.match(html, /<span class="pill" id="pill">LIVE<\/span><span class="spec-tag" id="specTag" aria-hidden="true">\u{1F308} SPECTRUM<\/span>/u);
+  assert.match(html, /\.spec-tag \{[^}]*opacity: 0;[^}]*transition: opacity \.3s/);
+  assert.match(html, /\.spec-tag, \.spec-tag\.on \{ transition: none; \}/);
+  assert.match(html, /var tagOn = !!ambient;/);
+  assert.match(html, /if \(!reduced\) \{ ghosts\.forEach\(function \(g\) \{ g\.rainbow = true; \}\); \}/);
+  assert.match(html, /if \(pk\.rainbow\) rainbowTrail\(a, m, b, p, nowWall\);\n      else for \(var k = 5;/);
+  assert.doesNotMatch(html.split('var tagOn =')[1].split('\n')[1], /pill/);
+});
