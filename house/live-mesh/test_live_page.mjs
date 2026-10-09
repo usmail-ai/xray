@@ -357,3 +357,15 @@ test('ambient replay loop: dimmed overlay every 10 s, visual only, toggle + ?spe
   const body = html.split('function ambientPings(nowWall) {')[1].split('function draw(')[0];
   assert.doesNotMatch(body, /state\.(live|t)\s*=|speed\s*=|rewindTo|goLive|fetch|setInterval|setTimeout|flashes/);
 });
+
+test('replay loop look: rainbow trail only on replay pings, SPECTRUM tag beside (never replacing) the pill', () => {
+  const html = readFileSync(path.join(liveDir, 'index.html'), 'utf8');
+  for (const s of [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1])) assert.doesNotThrow(() => new Function(s));
+  assert.match(html, /<span class="pill" id="pill">LIVE<\/span><span class="spec-tag" id="specTag" aria-hidden="true">\u{1F308} SPECTRUM<\/span>/u);
+  assert.match(html, /\.spec-tag \{[^}]*opacity: 0;[^}]*transition: opacity \.3s/);
+  assert.match(html, /\.spec-tag, \.spec-tag\.on \{ transition: none; \}/);
+  assert.match(html, /var tagOn = !!ambient;/);
+  assert.match(html, /if \(!reduced\) \{ ghosts\.forEach\(function \(g\) \{ g\.rainbow = true; \}\); \}/);
+  assert.match(html, /if \(pk\.rainbow\) rainbowTrail\(a, m, b, p, nowWall\);\n      else for \(var k = 5;/);
+  assert.doesNotMatch(html.split('var tagOn =')[1].split('\n')[1], /pill/);
+});

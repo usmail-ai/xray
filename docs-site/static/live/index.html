@@ -44,6 +44,11 @@
     #headTime { color: var(--dim); font-size: 12px; }
     canvas { display: block; width: 100%; height: auto; }
     .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .spec-tag { display: inline-block; flex: none; margin-left: 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; padding: 3px 8px; border-radius: 999px;
+      color: #fff; border: 1px solid #8a7bff; background: linear-gradient(90deg, #3a1530, #3a2a10, #123320, #10263a, #24143a);
+      opacity: 0; visibility: hidden; transition: opacity .3s ease, visibility 0s linear .3s; pointer-events: none; }
+    .spec-tag.on { opacity: 1; visibility: visible; transition: opacity .3s ease; }
+    @media (prefers-reduced-motion: reduce) { .spec-tag, .spec-tag.on { transition: none; } }
     .ambient-toggle { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #a99bff; cursor: pointer; }
     button, select { background: #10182a; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font: inherit; cursor: pointer; }
     button:hover { border-color: #3a4c72; }
@@ -76,7 +81,7 @@
     <div class="title">
       <canvas id="mark" width="112" height="44" role="img" aria-label="0xRay"></canvas>
       <h1>BLAZE DESK <span>ping-pong mesh · live feed: PRs + Light + X both ways</span></h1>
-      <span class="pill" id="pill">LIVE</span>
+      <span class="pill" id="pill">LIVE</span><span class="spec-tag" id="specTag" aria-hidden="true">🌈 SPECTRUM</span>
       <div class="fleet" aria-live="off"><b id="fleet">Fleet: …</b><br><span id="blackout"></span></div>
     </div>
     <p class="status" id="status">Loading feed…</p>
@@ -203,6 +208,15 @@
   var AMBIENT_EVERY_MS = 10000, AMBIENT_MS = 5000, AMBIENT_WINDOW_MS = 5 * 60 * 1000, AMBIENT_ALPHA = 0.4, AMBIENT_MIN_EVENTS = 20;
   var ambientOn = !reduced && !/[?&]spectrum=0(&|$)/.test(location.search);
   var ambient = null, ambientNext = 0, ambientStats = window.LIVE_AMBIENT = { passes: 0, on: ambientOn };
+  // Rainbow trail: replayed packets leave a short fading rainbow tail whose hue cycles along the path (never live pings)
+  function rainbowTrail(a, m, b, p, nowWall) {
+    for (var k = 12; k >= 1; k--) {
+      var tq = bez(a, m, b, Math.max(0, p - k * 0.025)), hue = Math.round((p * 360 + k * 28 + nowWall * 0.12) % 360);
+      ctx.fillStyle = 'hsla(' + hue + ',95%,62%,' + ((13 - k) / 13 * 0.9).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(tq[0], tq[1], 1.5 + (13 - k) * 0.38, 0, 7); ctx.fill();
+    }
+  }
+  var specTagOn = false;
   function ambientPings(nowWall) {
     if (!ambientOn || !state.live || document.hidden) { ambient = null; ambientNext = nowWall + AMBIENT_EVERY_MS; return []; }
     if (!ambient) {
@@ -272,12 +286,16 @@
     });
     // pings in flight: dimmed ambient replay underneath, live pings on top at full brightness
     var ghosts = ambientPings(nowWall); ambientStats.drawing = ghosts.length;
+    var tagOn = !!ambient;   // replay pass running: tag beside the pill (the pill itself is untouched)
+    if (tagOn !== specTagOn) { specTagOn = tagOn; $('specTag').classList.toggle('on', tagOn); }
+    if (!reduced) { ghosts.forEach(function (g) { g.rainbow = true; }); }
     if (ghosts.length) { ctx.globalAlpha = AMBIENT_ALPHA; ghosts.forEach(drawPing); ctx.globalAlpha = 1; }
     pings.forEach(drawPing);
     function drawPing(pk) {
       var a = pos[pk.src], b = pos[pk.dst], m = edgeMid(a, b);
       var p = Math.min(1, Math.max(0, pk.p)); p = p * p * (3 - 2 * p);
-      for (var k = 5; k >= 1; k--) {
+      if (pk.rainbow) rainbowTrail(a, m, b, p, nowWall);
+      else for (var k = 5; k >= 1; k--) {
         var tq = bez(a, m, b, Math.max(0, p - k * 0.04));
         ctx.fillStyle = rgb(pk.col, (6 - k) / 6); ctx.beginPath(); ctx.arc(tq[0], tq[1], 6 - k, 0, 7); ctx.fill();
       }
