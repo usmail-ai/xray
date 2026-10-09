@@ -23,6 +23,7 @@ xray/inference/
 __pycache__/
 *.pyc
 fleet/activity.jsonl
+fleet/inbox/
 *.log
 *.out
 rerun-*/

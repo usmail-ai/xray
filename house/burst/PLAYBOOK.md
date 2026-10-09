@@ -48,6 +48,8 @@ timeline, not in the pill.
 | Watchdog | the same restart loop | about 60s | start the feed again if it died | none | `run()` until the stop file exists |
 | Delta pusher | `house/burst/push.sh` + `push-delta.mjs` | one post while the lock is held, then sleep 2s | one delta to the ingest | local activity lines already written | secret is the `X-Burst-Ingest` header; a 409 posts once more |
 | Pages tripwire | `house/live-mesh/tripwire_push.py` | 300s | `feed_push` when the public snapshot changes | existing feed | unchanged |
+| Seat inbox | `house/burst/inbox.py` inside the feed pass | every pass, one line per new event id | `fleet/inbox/<seat>.jsonl` | id, time, seat, type, repo, number, sha, title, url, reason. No bodies | read the inbox first and keep a cursor. See "Seat inboxes" |
+| Waveboard | `build_waveboard.py` subprocess from the same pass | at most once a minute, only when the pass has new events | `WAVEBOARD.md` | the builder sees the read-only GitHub token | `BURST_WAVEBOARD` path, or off. A failure does not stop the feed |
 
 ### Lab-run working (live rule)
 
@@ -93,6 +95,37 @@ There is no static `ACTIVITY_KEY` fallback. The verdict cache stores `sha256(tok
 ### Pusher lock
 
 `push.sh` posts one delta to `BURST_INGEST_URL` while it holds flock on fd 9. The ingest secret is the `X-Burst-Ingest` header. A 409 refetches `BURST_FEED_URL` and posts once more. The script then sleeps with `9>&-`, so a stopped pusher's orphan sleep does not keep the lock.
+
+## Seat inboxes
+
+The feed loop routes each new event id into `fleet/inbox/<seat>.jsonl`. The directory is `BURST_INBOX` (default `fleet/inbox`; the USMail collector uses `/workspace/live-mesh-run/fleet/inbox`). Roles are JSON in [inbox-roles.json](inbox-roles.json) (`BURST_INBOX_ROLES`). The line shape is [inbox.schema.json](inbox.schema.json): `id`, `t_ct`, `seat`, `type`, `repo`, `number`, optional `sha`, `title`, `url`, `reason`. No bodies, prompt text, or secrets. Files keep the last 7 days (`keep_days`).
+
+A watcher reads its inbox first, stores the last id it handled, and still runs its current checks as a backup.
+
+| Seat | File | What arrives |
+|---|---|---|
+| Critic | `critic.jsonl` | new and updated pull requests |
+| ARCH1 | `arch1.jsonl` | Critic PASS and green CI on the same head sha |
+| Chaos | `chaos.jsonl` | merges to `develop` |
+| Operator | `operator.jsonl` | Railway deploys and holds, lab issues, and issues or comments that ask for Railway, lab, labtest, or cloud agents, or that mention Operator or operator0x |
+| CoS | `cos.jsonl` | a pull request with no activity for `stall_hours` (default 6), a watcher gap, and anything labeled or mentioning Blaze or `needs-decision` |
+
+Only ARCH1 is mirrored. The pusher posts new `arch1.jsonl` lines to `BURST_INBOX_URL`. The server answers `GET /inbox/arch1?since=<id>` after the same installation-token check as `POST /activity` (the arch1 seat, bot `arch10x1[bot]`). No other inbox is served.
+
+When the pass has new events, the loop may run the waveboard builder (`BURST_WAVEBOARD`, default `/workspace/0xray-fleet/house/watchers/build_waveboard.py` when that file exists). It runs at most once a minute, as a subprocess with a timeout, with the read-only GitHub token. If the builder is missing, off, or fails, the feed pass still finishes.
+
+Routine prompt:
+
+```
+Read fleet/inbox/<seat>.jsonl first. Keep a cursor: the last id you already handled. Act on each newer line, using title, url, and reason. Then run your current checks as a backup in case a line was missed. Do not write a watcher line when the inbox and the backup are both empty.
+```
+
+Two lines a critic inbox can hold:
+
+```json
+{"id":"org/repo#1:open","t_ct":"2026-10-09T09:00:00-05:00","seat":"critic","type":"pr_open","repo":"org/repo","number":1,"title":"org/repo #1 opened","url":"https://github.com/org/repo/pull/1","reason":"new or updated pr"}
+{"id":"org/repo#1:push:abcdef012345","t_ct":"2026-10-09T09:10:00-05:00","seat":"critic","type":"pr_update","repo":"org/repo","number":1,"sha":"abcdef012345abcdef012345abcdef01234567","title":"org/repo #1 update","url":"https://github.com/org/repo/pull/1","reason":"new or updated pr"}
+```
 
 ## Seat on a laptop (off-box seat)
 
@@ -159,3 +192,5 @@ Set the token as the host variable `GITHUB_READ_TOKEN`. Do not put a GitHub App 
 12. **The header said IDLE while the dot blinked or the node said working.** Chip text, the blinking dot, and the node label read one state: working, then active, then idle. A working seat is working in all three. Working stays outside N of M.
 
 13. **A prompt went quiet and a post could name another seat.** `seat` on `POST /activity` is optional. When it is present it must match the installation token, case-insensitive, or the response is 403 `seat mismatch`. The stored seat is the token's seat. There is no static key. A `SENT` prompt pulse keeps the seat working for 10 minutes, after display names resolve through seats aliases. An open `activity.jsonl` start still caps at 60 minutes. `fleet.missing_activity` lists seats that pulsed in the last 60 minutes with no activity line. The page does not show that list.
+
+14. **Watchers learned about a pull request only by polling.** The feed pass appends one inbox line per new event id. Critic gets new and updated pull requests. ARCH1 gets Critic PASS plus green CI on the same head sha. Chaos gets merges to develop. Operator gets Railway deploys and holds, lab issues, and asks for Railway, lab, labtest, or cloud agents. CoS gets stalls, watcher gaps, and Blaze or `needs-decision`. A watcher reads its inbox first and keeps its old checks as backup. Only `GET /inbox/arch1` is served, with the arch1 installation token. `WAVEBOARD.md` rebuilds from the same pass, at most once a minute. A builder failure does not stop the feed.
