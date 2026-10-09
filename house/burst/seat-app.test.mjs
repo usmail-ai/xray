@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mintPlan, permissionDrift } from './seat-app.mjs';
+import { mintPlan, permissionDrift, readOnlyPlan } from './seat-app.mjs';
 
 const seat = {
   id: 'seat-a',
@@ -28,4 +28,11 @@ test('a broader returned permission is drift', () => {
 test('a seat without permissions is refused', () => {
   const plan = mintPlan({ id: 'seat-a', appId: 1, installationId: 2 });
   assert.equal(plan.ok, false);
+});
+
+test('a read-only plan refuses any permission that is not read', () => {
+  assert.equal(readOnlyPlan(seat).ok, true);
+  const write = readOnlyPlan({ ...seat, permissions: { contents: 'write' } });
+  assert.equal(write.ok, false);
+  assert.match(write.error, /read-only/);
 });

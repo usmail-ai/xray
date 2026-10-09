@@ -17,6 +17,8 @@
     { name: 'Pages copy', url: 'live-events.json' }
   ];
   var POLL_MS = 60000;
+  var BURST_POLL_MS = 10000;
+  var FRESH_MS = 90000;
   var PING_MS = 1100;
 
   var AGENTS = [
@@ -90,8 +92,35 @@
   }
   /* Fleet line from the same seat status as the strip (activeSeats). */
   function fleetLine(hot) {
+    // Working lights are not seats in this count. Callers must not pass them as hot.
     var live = SEAT_NAMES.filter(function (k) { return own(hot, k); }).length;
     return 'Fleet: ' + live + ' live / ' + (SEAT_NAMES.length - live) + ' idle';
+  }
+  /* generated_at age. ≤ 90s is LIVE; otherwise "behind N min". */
+  function freshnessLabel(generatedAt, nowMs) {
+    if (generatedAt == null || isNaN(generatedAt)) return 'behind 1 min';
+    var age = nowMs - generatedAt;
+    if (age <= FRESH_MS) return 'LIVE';
+    return 'behind ' + Math.max(1, Math.round(age / 60000)) + ' min';
+  }
+  /* feed.working is { seat: until-iso }. One time per seat. True while now < until. */
+  function seatWorking(working, nowMs) {
+    var on = {};
+    if (!working) return on;
+    Object.keys(working).forEach(function (seat) {
+      var until = parseT(working[seat]);
+      if (!isNaN(until) && nowMs < until) on[seat] = 1;
+    });
+    return on;
+  }
+  /* One state for the chip, the blinking dot, and the node label. */
+  function seatState(active, working) {
+    if (working) return 'working';
+    if (active) return 'active';
+    return 'idle';
+  }
+  function burstSinceUrl(base, cursor) {
+    return base + (base.indexOf('?') < 0 ? '?' : '&') + 'since=' + encodeURIComponent(cursor);
   }
   /* Wires: solid line with a soft 'current' glow travelling along it, even idle (not packets).
      Returns the glow position 0..1 for an edge with offset off; null under reduced motion. */
@@ -282,13 +311,20 @@
     var before = {};
     state.events.forEach(function (e) { before[e.id] = 1; });
     var events = mergeEvents(state.events, (feed && feed.events) || []);
+    if (feed && Array.isArray(feed.removed)) {
+      var drop = {};
+      feed.removed.forEach(function (id) { drop[id] = 1; });
+      events = events.filter(function (e) { return !drop[e.id]; });
+    }
     var added = events.filter(function (e) { return !before[e.id]; }).map(function (e) { return e.id; });
     var gen = feed && feed.generated_at ? parseT(feed.generated_at) : NaN;
     var next = {
       events: events,
       live: state.live,
       t: state.live ? nowMs : state.t,
-      generatedAt: !isNaN(gen) && !(gen < (state.generatedAt || 0)) ? gen : state.generatedAt
+      generatedAt: !isNaN(gen) && !(gen < (state.generatedAt || 0)) ? gen : state.generatedAt,
+      working: feed && own(feed, 'working') !== undefined ? feed.working : (state.working || null),
+      cursor: (feed && feed.cursor) || state.cursor || null
     };
     return { state: next, added: added };
   }
@@ -323,6 +359,23 @@
 
   /* One poll. mem carries { etag, apiBlockedUntil } between polls. Resolves to
      { source, feed } (feed null on a 304) or rejects when every source fails. */
+  /* Same-origin cursor poll. 304 keeps the page. 409 drops the cursor and refetches once. */
+  function burstPoll(fetchFn, nowMs, mem, resync) {
+    var url = (!resync && mem.cursor) ? burstSinceUrl('live-events.json', mem.cursor) : feedUrl('live-events.json', nowMs);
+    return fetchFn(url, { cache: 'no-store', headers: { Accept: 'application/json' } }).then(function (res) {
+      if (res.status === 304) return { source: 'burst', feed: null, status: 304 };
+      if (res.status === 409 && !resync) {
+        mem.cursor = null;
+        return burstPoll(fetchFn, nowMs, mem, true);
+      }
+      if (!res.ok) return Promise.reject(new Error('burst HTTP ' + res.status));
+      return res.json().then(function (feed) {
+        if (feed && feed.cursor) mem.cursor = feed.cursor;
+        return { source: 'burst', feed: feed, status: res.status };
+      });
+    });
+  }
+
   function fetchFeed(fetchFn, nowMs, mem) {
     var api = SOURCES[0];
     function fallback(i) {
@@ -353,7 +406,7 @@
   }
 
   root.LiveMesh = {
-    HUB_LABEL: 'Burst', SOURCES: SOURCES, POLL_MS: POLL_MS, PING_MS: PING_MS, AGENTS: AGENTS, SEAT_NAMES: SEAT_NAMES, COLOR: COLOR,
+    HUB_LABEL: 'Burst', SOURCES: SOURCES, POLL_MS: POLL_MS, BURST_POLL_MS: BURST_POLL_MS, FRESH_MS: FRESH_MS, PING_MS: PING_MS, AGENTS: AGENTS, SEAT_NAMES: SEAT_NAMES, COLOR: COLOR,
     LABEL: LABEL, SUB: SUB, SQUARE: SQUARE, HUB: HUB, SATS: SATS, EDGES: EDGES, KIND_WORD: KIND_WORD,
     resolveNodes: resolveNodes, eventColor: eventColor, cleanLabel: cleanLabel, whoTag: whoTag,
     headline: headline, parseT: parseT, mergeEvents: mergeEvents, countUpTo: countUpTo,
@@ -363,6 +416,7 @@
     ENTRY_MS: ENTRY_MS, PULSE_MS: PULSE_MS, MARK: MARK, markCells: markCells,
     isPlaying: isPlaying, sliderAction: sliderAction, edgeTraffic: edgeTraffic, orbitStep: orbitStep,
     GLYPH: GLYPH, MARK_PATH: MARK_PATH, activeSeats: activeSeats, recentItems: recentItems, BOT_IMAGES: BOT_IMAGES, BLACKOUT_UNTIL: BLACKOUT_UNTIL,
-    countdown: countdown, blackoutLine: blackoutLine, fleetLine: fleetLine, wireGlow: wireGlow
+    countdown: countdown, blackoutLine: blackoutLine, fleetLine: fleetLine, wireGlow: wireGlow,
+    freshnessLabel: freshnessLabel, seatWorking: seatWorking, seatState: seatState, burstSinceUrl: burstSinceUrl, burstPoll: burstPoll
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

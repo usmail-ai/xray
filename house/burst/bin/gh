@@ -1,0 +1,11 @@
+#!/bin/sh
+# Run gh as the seat's GitHub App bot. Read-only: a non-read permission exits 2.
+# App id, installation id, and key come from the environment. The token is not logged.
+set -eu
+here=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+: "${GITHUB_APP_ID:?}"
+: "${GITHUB_APP_INSTALLATION_ID:?}"
+: "${BURST_BOT_LOGIN:?}"
+export BURST_APP_READ_ONLY=1
+tok=$(node "$here/mint-cli.mjs") || exit $?
+GH_TOKEN=$tok exec gh "$@"

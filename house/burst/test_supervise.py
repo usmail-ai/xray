@@ -2,7 +2,9 @@ import os
 import tempfile
 import unittest
 
-from supervise import run
+from pathlib import Path
+
+from supervise import remint_due, run
 
 
 class Proc:
@@ -38,6 +40,20 @@ class SuperviseTest(unittest.TestCase):
         out = run(["feed"], lambda _c: Proc(0), stop, sleep=lambda _n: None)
         self.assertEqual(out["starts"], 0)
         self.assertTrue(out["stopped"])
+
+    def test_remint_uses_wall_clock_distance(self):
+        minted = 1_000_000.0
+        self.assertFalse(remint_due(minted, minted + 50 * 60 - 1))
+        self.assertTrue(remint_due(minted, minted + 50 * 60))
+        src = Path(__file__).resolve().parent.joinpath("supervise.py").read_text()
+        self.assertNotIn("monotonic", src)
+        self.assertNotIn("timeout", src)
+
+    def test_pusher_sleep_closes_the_lock_fd(self):
+        src = Path(__file__).resolve().parent.joinpath("push.sh").read_text()
+        self.assertIn("flock -n 9", src)
+        self.assertIn('sleep "$CHECK" 9>&-', src)
+        self.assertIn("push-delta.mjs", src)
 
 
 if __name__ == "__main__":

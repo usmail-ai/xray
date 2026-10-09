@@ -1,0 +1,105 @@
+{
+  "org": "<org>",
+  "repos": ["<org>/<repo>"],
+  "aliases": {
+    "Chief of Staff": "CoS",
+    "Lab Tester: Chaos": "Chaos"
+  },
+  "seats": [
+    {
+      "id": "architect",
+      "plate": { "seat": "architect", "bot": "", "role": "architect", "color": "#F5F7FA", "emoji": "✏️" },
+      "signals": ["prompt"]
+    },
+    {
+      "id": "builder",
+      "plate": { "seat": "builder", "bot": "builder-app[bot]", "role": "builder", "color": "#3DE0E8", "emoji": "🔨" },
+      "appId": "<APP_ID>",
+      "installationId": "<INSTALLATION_ID>",
+      "botId": 0,
+      "repositories": ["<repo>"],
+      "permissions": {
+        "contents": "write",
+        "pull_requests": "write",
+        "issues": "write",
+        "statuses": "write",
+        "workflows": "write",
+        "actions": "write",
+        "checks": "read",
+        "metadata": "read"
+      }
+    },
+    {
+      "id": "gate",
+      "plate": { "seat": "gate", "bot": "gate-app[bot]", "role": "gate", "color": "#F5C518", "emoji": "✶" },
+      "appId": "<APP_ID>",
+      "installationId": "<INSTALLATION_ID>",
+      "botId": 0,
+      "repositories": ["<repo>"],
+      "permissions": {
+        "pull_requests": "write",
+        "issues": "write",
+        "statuses": "write",
+        "contents": "read",
+        "checks": "read",
+        "metadata": "read"
+      }
+    },
+    {
+      "id": "lab",
+      "plate": { "seat": "lab", "bot": "lab-app[bot]", "role": "lab", "color": "#4A7FD4", "emoji": "🧪" },
+      "appId": "<APP_ID>",
+      "installationId": "<INSTALLATION_ID>",
+      "botId": 0,
+      "repositories": ["<repo>"],
+      "permissions": {
+        "contents": "write",
+        "pull_requests": "write",
+        "issues": "write",
+        "statuses": "write",
+        "workflows": "write",
+        "actions": "write",
+        "checks": "read",
+        "metadata": "read"
+      }
+    },
+    {
+      "id": "operator",
+      "plate": { "seat": "operator", "bot": "operator-app[bot]", "role": "operator", "color": "#7C5CBF", "emoji": "🛠️" },
+      "appId": "<APP_ID>",
+      "installationId": "<INSTALLATION_ID>",
+      "botId": 0,
+      "repositories": ["<repo>"],
+      "permissions": {
+        "contents": "write",
+        "pull_requests": "write",
+        "issues": "write",
+        "statuses": "write",
+        "workflows": "write",
+        "actions": "write",
+        "checks": "read",
+        "metadata": "read"
+      }
+    },
+    {
+      "id": "coordinator",
+      "plate": { "seat": "coordinator", "bot": "coordinator-app[bot]", "role": "coordinator", "color": "#E07A3D", "emoji": "🖲️" },
+      "appId": "<APP_ID>",
+      "installationId": "<INSTALLATION_ID>",
+      "botId": 0,
+      "repositories": ["<repo>"],
+      "permissions": {
+        "issues": "write",
+        "pull_requests": "write",
+        "contents": "read",
+        "metadata": "read",
+        "checks": "read"
+      }
+    },
+    {
+      "id": "cloud",
+      "plate": { "seat": "cloud", "bot": "cloud-app[bot]", "role": "cloud", "color": "#3DDC97", "emoji": "☁️" },
+      "note": "No private key on the host. The box appends cloud-agents.jsonl for this plate."
+    }
+  ]
+}

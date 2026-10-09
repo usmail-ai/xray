@@ -21,6 +21,15 @@ export function mintPlan(seat) {
   };
 }
 
+export function readOnlyPlan(seat) {
+  const plan = mintPlan(seat);
+  if (!plan.ok) return plan;
+  for (const level of Object.values(plan.body.permissions)) {
+    if (level !== 'read') return { ok: false, error: 'read-only app refuses a non-read permission' };
+  }
+  return plan;
+}
+
 export function permissionDrift(returned, requested) {
   const bad = [];
   for (const [name, level] of Object.entries(returned || {})) {

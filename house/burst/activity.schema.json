@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "house/burst/activity.schema.json",
+  "title": "Burst activity line",
+  "description": "One line for fleet/activity.jsonl and for POST /activity. No free text. seat is optional on the post; when present it must match the installation token case-insensitively, and the stored seat is the token's seat. There is no static key. tag is at most 80 characters. t_ct is ISO-8601 with a numeric offset. Older stored lines may still use action received, sent, or tick; new lines use the enums below.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["t_ct", "kind", "action"],
+  "properties": {
+    "t_ct": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?[+-]\\d{2}:\\d{2}$",
+      "description": "ISO-8601 with a numeric offset, for example 2026-10-09T09:00:00-05:00."
+    },
+    "seat": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{1,40}$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["prompt", "turn", "subagent", "watcher", "cloud_agent", "lab_run", "review", "retest", "deploy"]
+    },
+    "action": {
+      "type": "string",
+      "enum": ["start", "end", "launch", "reply", "finished", "cancel", "pass", "fail"]
+    },
+    "to": {
+      "type": "string",
+      "maxLength": 40,
+      "pattern": "^[A-Za-z0-9 ._:@#+/\\-]{1,40}$"
+    },
+    "agent": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{2,40}$"
+    },
+    "tag": {
+      "type": "string",
+      "maxLength": 80,
+      "pattern": "^[A-Za-z0-9 ._:@#+/\\-]{1,80}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "prompt" } }, "required": ["kind"] },
+      "then": { "properties": { "action": { "enum": ["start", "end"] } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "turn" } }, "required": ["kind"] },
+      "then": { "properties": { "action": { "enum": ["start", "end"] } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "subagent" } }, "required": ["kind"] },
+      "then": { "properties": { "action": { "enum": ["start", "end"] } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "watcher" } }, "required": ["kind"] },
+      "then": { "properties": { "action": { "enum": ["start", "end"] } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "cloud_agent" } }, "required": ["kind"] },
+      "then": {
+        "required": ["agent"],
+        "properties": { "action": { "enum": ["launch", "reply", "finished", "cancel"] } }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "lab_run" } }, "required": ["kind"] },
+      "then": { "properties": { "action": { "enum": ["start", "end", "pass", "fail"] } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "review" } }, "required": ["kind"] },
+      "then": { "properties": { "action": { "enum": ["start", "end", "pass", "fail"] } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "retest" } }, "required": ["kind"] },
+      "then": { "properties": { "action": { "enum": ["start", "end", "pass", "fail"] } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "deploy" } }, "required": ["kind"] },
+      "then": { "properties": { "action": { "enum": ["start", "end", "pass", "fail", "cancel"] } } }
+    }
+  ],
+  "$defs": {
+    "seatActivity": {
+      "title": "fleet/activity.jsonl line",
+      "description": "One start or end of background work on a box or laptop seat. Same object POST /activity accepts. Names and times only: no prompt body and no message text. A seat is working while a start has no later end for the same seat, kind, and tag, for at most 60 minutes. That light is not counted in N of M.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t_ct", "kind", "action", "tag"],
+      "properties": {
+        "t_ct": { "$ref": "#/properties/t_ct" },
+        "seat": { "$ref": "#/properties/seat" },
+        "kind": { "enum": ["subagent", "turn", "watcher"] },
+        "action": { "enum": ["start", "end"] },
+        "tag": { "$ref": "#/properties/tag" }
+      },
+      "examples": [
+        { "t_ct": "2026-10-09T09:00:00-05:00", "seat": "builder", "kind": "turn", "action": "start", "tag": "issue-1" },
+        { "t_ct": "2026-10-09T09:04:00-05:00", "seat": "builder", "kind": "turn", "action": "end", "tag": "issue-1" },
+        { "t_ct": "2026-10-09T09:01:00-05:00", "seat": "builder", "kind": "subagent", "action": "start", "tag": "review" },
+        { "t_ct": "2026-10-09T09:02:00-05:00", "seat": "builder", "kind": "watcher", "action": "start", "tag": "repos" }
+      ]
+    }
+  },
+  "examples": [
+    { "t_ct": "2026-10-09T09:00:00-05:00", "seat": "builder", "kind": "prompt", "action": "start", "tag": "issue-1" },
+    { "t_ct": "2026-10-09T09:00:01-05:00", "seat": "builder", "kind": "turn", "action": "start", "tag": "issue-1" },
+    { "t_ct": "2026-10-09T09:00:02-05:00", "seat": "builder", "kind": "turn", "action": "end", "tag": "issue-1" },
+    { "t_ct": "2026-10-09T09:01:00-05:00", "seat": "builder", "kind": "subagent", "action": "start", "to": "gate", "tag": "review" },
+    { "t_ct": "2026-10-09T09:02:00-05:00", "seat": "builder", "kind": "watcher", "action": "start", "tag": "repos" },
+    { "t_ct": "2026-10-09T09:03:00-05:00", "seat": "cloud", "kind": "cloud_agent", "action": "launch", "agent": "agent-1", "tag": "issue-1" },
+    { "t_ct": "2026-10-09T09:04:00-05:00", "seat": "lab", "kind": "lab_run", "action": "pass", "tag": "stretch-1" },
+    { "t_ct": "2026-10-09T09:04:30-05:00", "seat": "gate", "kind": "review", "action": "pass", "tag": "pr-1" },
+    { "t_ct": "2026-10-09T09:04:40-05:00", "seat": "lab", "kind": "retest", "action": "fail", "tag": "pr-1" },
+    { "t_ct": "2026-10-09T09:04:50-05:00", "seat": "operator", "kind": "deploy", "action": "end", "tag": "host" }
+  ]
+}

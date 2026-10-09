@@ -28,10 +28,12 @@ from __future__ import annotations
 
 import argparse
 import base64
+import importlib.util
 import http.client
 import json
 import os
 import re
+import secrets
 import subprocess
 import sys
 import time
@@ -84,6 +86,11 @@ class MintError(RuntimeError):
     pass
 
 
+class AuthExpired(Exception):
+    """GitHub returned 401. Not an OSError, so a handler that catches a dropped
+    connection cannot swallow it and then rewrite the feed as fresh."""
+
+
 class AppToken:
     """GitHub App installation token: App JWT (RS256, signed by the openssl CLI) ->
     POST /app/installations/{id}/access_tokens. Installation tokens live 1h; re-mint at 55 min,
@@ -108,6 +115,7 @@ class AppToken:
         return cls(*vals)
 
     def stale(self, now: float | None = None) -> bool:
+        # Wall clock (time.time), so a paused VM that jumps the clock re-mints.
         now = time.time() if now is None else now
         return (not self.token or now - self.minted_at >= self.REMINT_AFTER
                 or bool(self.expires_at and self.expires_at - now < 300))
@@ -180,12 +188,20 @@ class GitHub:
         try:
             return self._get(url, etag)
         except urllib.error.HTTPError as e:
-            # A 401 on a token older than a minute: re-mint once and retry this request.
-            if e.code != 401 or not self.app or time.time() - self.app.minted_at < 60:
+            if e.code != 401:
                 raise
+            # A token younger than a minute, or a token this process cannot re-mint:
+            # fail the request. Do not keep using the body-less error as a network blip.
+            if not self.app or time.time() - self.app.minted_at < 60:
+                raise AuthExpired("GitHub HTTP 401") from None
             log("GitHub HTTP 401; re-minting App token")
             self.token = self.app.mint()
-            return self._get(url, etag)
+            try:
+                return self._get(url, etag)
+            except urllib.error.HTTPError as again:
+                if again.code == 401:
+                    raise AuthExpired("GitHub HTTP 401") from None
+                raise
 
     def _get(self, url: str, etag: str | None = None):
         req = urllib.request.Request(url, headers={
@@ -294,9 +310,23 @@ def pr_events(gh: GitHub, repo: str, pr: dict, since: datetime) -> list[dict]:
     # becomes ci_*, on purpose: one CI event per head instead of one per job.
     try:
         runs = gh.get(f"/repos/{repo}/commits/{pr['head']['sha']}/check-runs", {"per_page": 100})
-    except urllib.error.HTTPError:
+    except AuthExpired:
+        raise
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            raise AuthExpired("GitHub HTTP 401") from None
         runs = {"check_runs": []}
+        # Fine-grained host tokens have no Checks permission (403). Derive the
+        # same working signal from Actions runs/jobs and commit statuses.
+        if e.code == 403:
+            for noted in _host_ci_notes(gh, repo, pr["head"]["sha"], author, pr.get("merged_at")):
+                CHECK_NOTES.append(noted)
     for cr in runs.get("check_runs", []):
+        noted = _burst_working().note_check(
+            author, pr.get("merged_at"), cr.get("status"), cr.get("conclusion"),
+            cr.get("started_at"), cr.get("completed_at"))
+        if noted:
+            CHECK_NOTES.append(noted)
         t, concl = cr.get("completed_at"), cr.get("conclusion")
         if not recent(t) or concl not in ("success", "failure"):
             continue
@@ -412,7 +442,8 @@ _RANK_ORDER = [["push"], ["pr_open"], ["pr_update"], ["ci_pass", "ci_fail"], ["c
 KIND_RANK = {k: i for i, ks in enumerate(_RANK_ORDER) for k in ks}
 # Dedupe precedence when two sources give the same id (lower wins).
 SRC_RANK = {"github-api": 0, "github-deployments": 0, "x-api": 0, "health-probe": 0,
-            "x-ledger.jsonl": 1, "light-notes.jsonl": 2, "feed-pushes.jsonl": 1}
+            "x-ledger.jsonl": 1, "light-notes.jsonl": 2, "feed-pushes.jsonl": 1,
+            "box-events.jsonl": 1}
 MERGE_X_RANK = 3
 HERALD_HANDLES = {"0xRayAI", "herald"}
 
@@ -476,15 +507,12 @@ def deploy_events(gh: GitHub, repo: str, since: datetime) -> list[dict]:
 
 
 def probe(url: str) -> tuple[bool, str]:
+    """HTTP status code only. The response body is not a signal and is not read."""
     req = urllib.request.Request(url, headers={"User-Agent": "xray-live-mesh-feed"})
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
-            body = r.read(4096).decode(errors="replace")
-            try:
-                status = json.loads(body).get("status", "ok")
-            except (ValueError, AttributeError):
-                status = "ok"
-            return (status == "ok", "200" if status == "ok" else f"status {status}"[:20])
+            code = r.getcode()
+            return (code == 200, str(code))
     except urllib.error.HTTPError as e:
         return False, str(e.code)
     except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError):
@@ -616,6 +644,8 @@ def x_events(path: Path, since: datetime) -> list[dict]:
 
 
 PR_CACHE: dict = {}  # (repo, number) -> (signature, fetched_at, events); watch mode only
+CHECK_NOTES: list = []  # busy/fail checks this pass; one time per seat is derived later
+BRANCH_TIPS: dict = {}  # (repo, branch) -> tip sha; first sight is a baseline, not an event
 
 # ---------------------------------------------------------------- pushes
 
@@ -679,6 +709,46 @@ def feed_push_events(path: Path, since: datetime) -> list[dict]:
     return out
 
 
+def box_events(path: Path, since: datetime) -> list[dict]:
+    """Local signals the box pushed. One JSON event per line. Merged by id on the next pass."""
+    out = []
+    if not path.exists():
+        return out
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(rec, dict) or not rec.get("id") or not rec.get("t_ct"):
+            continue
+        if instant(rec["t_ct"]) < since:
+            continue
+        rec["src_file"] = "box-events.jsonl"
+        out.append(rec)
+    return out
+
+
+def next_cursor(out: Path) -> str:
+    """epoch.seq for this feed file. The epoch is created once. seq increments every write."""
+    epoch_path = out.parent / "burst-epoch"
+    seq_path = out.parent / "burst-seq"
+    if not epoch_path.exists():
+        epoch_path.write_text(secrets.token_hex(4), encoding="utf-8")
+    epoch = epoch_path.read_text(encoding="utf-8").strip()
+    seq = 0
+    if seq_path.exists():
+        try:
+            seq = int(seq_path.read_text(encoding="utf-8").strip() or "0")
+        except ValueError:
+            seq = 0
+    seq += 1
+    seq_path.write_text(str(seq), encoding="utf-8")
+    return f"{epoch}.{seq}"
+
+
 def merge(events: list[dict]) -> list[dict]:
     """Dedupe by id keeping the higher-precedence source; fill optional fields the winner lacks."""
     best: dict[str, dict] = {}
@@ -696,7 +766,165 @@ def merge(events: list[dict]) -> list[dict]:
     return sorted(best.values(), key=order_key)
 
 
+def _burst_working():
+    name = "burst_working"
+    if name in sys.modules:
+        return sys.modules[name]
+    path = Path(__file__).resolve().parents[1] / "burst" / "working.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _host_ci_notes(gh: GitHub, repo: str, sha: str, author: str, merged_at):
+    """Actions runs, their jobs, and commit statuses. A 401 still fails the pass."""
+    def grab(path, params=None):
+        try:
+            return gh.get(path, params)
+        except AuthExpired:
+            raise
+        except urllib.error.HTTPError as err:
+            if err.code == 401:
+                raise AuthExpired("GitHub HTTP 401") from None
+            return {}
+
+    runs = grab(f"/repos/{repo}/actions/runs", {"head_sha": sha, "per_page": 20}) or {}
+    status = grab(f"/repos/{repo}/commits/{sha}/status") or {}
+    jobs = []
+    for run in (runs.get("workflow_runs") or [])[:5]:
+        run_id = run.get("id")
+        if not run_id:
+            continue
+        got = grab(f"/repos/{repo}/actions/runs/{run_id}/jobs", {"per_page": 20}) or {}
+        jobs.extend(got.get("jobs") or [])
+    return _burst_working().notes_from_host_ci(
+        author, merged_at, runs.get("workflow_runs"), jobs, status)
+
+
+def _supervise():
+    name = "burst_supervise"
+    if name in sys.modules:
+        return sys.modules[name]
+    path = Path(__file__).resolve().parents[1] / "burst" / "supervise.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def token_wall_expired(now: float | None = None) -> bool:
+    """True when BURST_TOKEN_MINTED is older than the wall-clock re-mint limit, or is not a number."""
+    raw = os.environ.get("BURST_TOKEN_MINTED", "").strip()
+    if not raw:
+        return False
+    now = time.time() if now is None else now
+    try:
+        minted = float(raw)
+    except ValueError:
+        log("BURST_TOKEN_MINTED is not a unix wall time")
+        return True
+    if _supervise().remint_due(minted, now):
+        log("token age reached on the wall clock")
+        return True
+    return False
+
+
+def branch_tip_events(gh: GitHub, repo: str, since: datetime) -> list[dict]:
+    """New branch tips this pass. Any branch except live-wire. The commit message is not stored.
+
+    The first time a branch is seen it is a baseline, so a restart does not replay every tip.
+    A later tip change is a push, including on a branch that is not main or develop.
+    """
+    out = []
+    branches = gh.get_cached(f"/repos/{repo}/branches", {"per_page": 100}) or []
+    for b in branches:
+        name = b.get("name") or ""
+        sha = ((b.get("commit") or {}).get("sha")) or ""
+        if not name or not sha or name in PUSH_SKIP_BRANCHES:
+            continue
+        key = (repo, name)
+        prev = BRANCH_TIPS.get(key)
+        BRANCH_TIPS[key] = sha
+        if prev is None or prev == sha or sha in REPRESENTED.get(repo, set()):
+            continue
+        commit = gh.get(f"/repos/{repo}/commits/{sha}")
+        cmt = commit.get("commit") or {}
+        when = (cmt.get("committer") or {}).get("date") or ""
+        if not when:
+            continue
+        t = datetime.fromisoformat(when.replace("Z", "+00:00"))
+        if t < since:
+            continue
+        login = ((commit.get("author") or {}).get("login"))
+        seat = seat_of(login, name)
+        out.append(ev(
+            f"{repo}:tip:{name}:{sha[:10]}", when, seat, "GitHub", "push",
+            f"pushed {short(repo)} {name} · {sha[:7]}",
+            f"https://github.com/{repo}/commit/{sha}", repo, None,
+            note=f"{name} {sha[:8]}",
+        ))
+    return out
+
+
+def _seats_config():
+    path = os.environ.get("BURST_SEATS", "").strip()
+    if not path or not Path(path).is_file():
+        return {}
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        log(f"BURST_SEATS not read ({type(exc).__name__})")
+        return {}
+
+
+def _jsonl_lines(path):
+    if not path or not Path(path).is_file():
+        return []
+    try:
+        return _burst_working().read_jsonl(path)
+    except OSError as exc:
+        log(f"{Path(path).name} not read ({type(exc).__name__})")
+        return []
+
+
+def _working_map(now: float) -> tuple:
+    mod = _burst_working()
+    until = mod.check_working(list(CHECK_NOTES), now)
+    CHECK_NOTES.clear()
+    labs_path = os.environ.get("BURST_LABS", "").strip()
+    if labs_path:
+        try:
+            labs = json.loads(Path(labs_path).read_text())
+            for seat, ts in mod.WATCH.scan(labs, now).items():
+                until[seat] = max(until.get(seat, 0), ts)
+        except (OSError, ValueError) as exc:
+            log(f"BURST_LABS not read ({type(exc).__name__})")
+    aliases = mod.alias_map(_seats_config())
+    prompts = _jsonl_lines(os.environ.get("BURST_PROMPTS", "fleet/prompts.jsonl").strip())
+    pulses = mod.prompt_pulses(prompts, aliases, now)
+    for seat, ts in mod.prompt_working(pulses, now).items():
+        until[seat] = max(until.get(seat, 0), ts)
+    activity_path = os.environ.get("BURST_ACTIVITY", "fleet/activity.jsonl").strip()
+    activity_lines = _jsonl_lines(activity_path)
+    box = None
+    if activity_path and Path(activity_path).is_file():
+        box = mod.activity_working(activity_lines, now, aliases=aliases)
+        for seat, ts in box.items():
+            until[seat] = max(until.get(seat, 0), ts)
+    missing = mod.missing_activity(pulses, activity_lines, aliases, now)
+    iso = {seat: datetime.fromtimestamp(ts, CT).isoformat() for seat, ts in until.items()}
+    box_iso = None if box is None else {
+        seat: datetime.fromtimestamp(ts, CT).isoformat() for seat, ts in box.items()}
+    return iso, box_iso, missing
+
+
 def build(args, gh: GitHub) -> dict:
+    CHECK_NOTES.clear()
     since = datetime.now(timezone.utc) - timedelta(hours=args.hours)
     if args.since:
         since = datetime.fromisoformat(args.since.replace("Z", "+00:00"))
@@ -722,6 +950,7 @@ def build(args, gh: GitHub) -> dict:
             events.extend(issue_events(gh, repo, since))
         if not args.no_pushes:
             events.extend(push_events(gh, repo, since))
+            events.extend(branch_tip_events(gh, repo, since))
     deploys: list[dict] = []
     if args.deploy_repo:
         deploys = deploy_events(gh, args.deploy_repo, since)
@@ -731,6 +960,9 @@ def build(args, gh: GitHub) -> dict:
     # allow --deploy-repo '' / --health '' to disable
     events.extend(light_note_events(Path(args.light_notes), since))
     events.extend(feed_push_events(Path(args.feed_pushes), since))
+    box_path = getattr(args, "box_events", None)
+    if box_path:
+        events.extend(box_events(Path(box_path), since))
     x_ledger = ledger_events(Path(args.x_ledger), since)
     events.extend(x_ledger)
     x_merged = x_events(Path(args.merge_x), since) if args.merge_x else []
@@ -742,7 +974,7 @@ def build(args, gh: GitHub) -> dict:
                   f"{len(x_ledger)} from x-ledger.jsonl (herald's machine ledger)" if x_ledger else "",
                   f"{len(x_merged)} from {Path(args.merge_x).name} via --merge-x (hand log, not a live X read)"
                   if x_merged else ""])) + ".")
-    return {
+    feed = {
         "title": "muse / 0xRay ping-pong live events",
         # Local inputs are recorded by file name only (no box paths in a committed feed).
         "sources": [f"https://github.com/{r}" for r in args.repos]
@@ -772,9 +1004,45 @@ def build(args, gh: GitHub) -> dict:
         "event_count": len(uniq),
         "events": uniq,
     }
+    working, box, missing = _working_map(time.time())
+    feed["working"] = working
+    feed["fleet"] = {"missing_activity": missing}
+    if box is not None:
+        feed["working_box"] = box
+    return feed
+
+
+def _keep_box_working(feed: dict, out: Path) -> None:
+    """A host rewrite keeps box lights this pass did not recompute, until their cap."""
+    if "working_box" in feed:
+        return
+    if not out.exists():
+        return
+    try:
+        old = json.loads(out.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    now = time.time()
+    kept = {}
+    for seat, iso in (old.get("working_box") or {}).items():
+        try:
+            ts = datetime.fromisoformat(str(iso)).timestamp()
+        except (TypeError, ValueError):
+            continue
+        if ts > now:
+            kept[seat] = iso
+    if not kept:
+        return
+    feed["working_box"] = kept
+    working = dict(feed.get("working") or {})
+    for seat, iso in kept.items():
+        working.setdefault(seat, iso)
+    feed["working"] = working
 
 
 def write(feed: dict, out: Path) -> int:
+    _keep_box_working(feed, out)
+    feed["cursor"] = next_cursor(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     stream = out.with_suffix(".jsonl")
     old_ids: set[str] = set()
@@ -810,6 +1078,7 @@ def main() -> int:
     p.add_argument("--no-issues", action="store_true")
     p.add_argument("--no-pushes", action="store_true", help="skip fleet push events (repo events feed)")
     p.add_argument("--feed-pushes", help="tripwire live-wire push ledger (default: <out dir>/feed-pushes.jsonl)")
+    p.add_argument("--box-events", help="box delta ledger (default: <out dir>/box-events.jsonl)")
     p.add_argument("--watch", type=float, default=0, help="poll every N seconds (0 = one pass)")
     args = p.parse_args()
     out_dir = Path(args.out).parent
@@ -817,14 +1086,25 @@ def main() -> int:
     args.x_ledger = args.x_ledger or str(out_dir / "x-ledger.jsonl")
     args.health_state = args.health_state or str(out_dir / "health-state.json")
     args.feed_pushes = args.feed_pushes or str(out_dir / "feed-pushes.jsonl")
+    args.box_events = args.box_events or str(out_dir / "box-events.jsonl")
     args.deploy_repo = args.deploy_repo or None
     args.health = args.health or None
     if os.environ.get("X_BEARER_TOKEN"):
         log("X_BEARER_TOKEN is set but the X API adapter is not built; X still comes from the ledger / --merge-x")
-    app = AppToken.from_env()
-    token = None if app else (os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"))
+    read_token = os.environ.get("GITHUB_READ_TOKEN", "").strip()
+    if read_token:
+        # The host collector uses a read-only fine-grained token. Do not load an
+        # App private key here: that key can mint a write token.
+        app = None
+        token = read_token
+        log("host GITHUB_READ_TOKEN: read-only; GitHub App private key is not loaded")
+    else:
+        app = AppToken.from_env()
+        token = None if app else (os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"))
     if app:
         log(f"App auth (installation {app.installation_id}): self-minting tokens; GITHUB_TOKEN/GH_TOKEN ignored")
+    elif read_token:
+        pass
     elif not token:
         log("no GITHUB_TOKEN/GH_TOKEN: private repos will 404 and the rate limit is 60/h")
     elif args.watch:
@@ -832,11 +1112,17 @@ def main() -> int:
     gh = GitHub(token, app)
     out = Path(args.out)
     while True:
+        if token_wall_expired():
+            log("exiting 75 without writing")
+            return 75
         try:
             gh.calls = gh.not_modified = 0
             feed = build(args, gh)
             n_new = write(feed, out)
             log(f"{feed['event_count']} events ({n_new} new) -> {out} [{gh.calls} API calls, {gh.not_modified} 304]")
+        except AuthExpired:
+            log("GitHub HTTP 401; pass failed loudly, feed not written")
+            return 75
         except urllib.error.HTTPError as e:
             log(f"GitHub HTTP {e.code} on {e.url}; keeping last feed")
             if not args.watch:

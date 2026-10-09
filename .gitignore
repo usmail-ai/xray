@@ -20,6 +20,9 @@ xray/inference/
 .opencode/xray/
 
 # Temp files
+__pycache__/
+*.pyc
+fleet/activity.jsonl
 *.log
 *.out
 rerun-*/

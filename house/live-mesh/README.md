@@ -18,11 +18,17 @@ X is wake/chatter, not the sport. X events come from herald's JSONL ledger (`--x
 | `light-notes.example.jsonl` | In-room critic Light format. |
 | `feed/` | Live output (git-ignored): `live-events.json`, `live-events.jsonl`, `x-ledger.jsonl`, `health-state.json`. |
 
+## Hosted collector
+
+The board's GitHub watcher runs on the host, next to the page, with `GITHUB_READ_TOKEN`. Leave the GitHub App private key on the seat box. Setup, the read-only token, and the delta push are in [house/burst/SETUP.md](../burst/SETUP.md). If the laptop or VM is down, GitHub events still flow. Signals the box pushed show stale.
+
+A fine-grained token has no Checks permission. Check state comes from Actions runs and jobs, and from commit statuses.
+
 ## Run
 
 ```bash
-# preferred for --watch: the poller mints its own App installation token, re-mints before
-# 55 min and on a 401, and ignores GITHUB_TOKEN/GH_TOKEN (no other fallback)
+# preferred for --watch on a seat box: the poller mints its own App installation token.
+# The host collector uses GITHUB_READ_TOKEN instead, and does not load a private key.
 export GITHUB_APP_ID=... GITHUB_APP_INSTALLATION_ID=... GITHUB_APP_PRIVATE_KEY_PATH=/path/to/app.pem
 # or: export GITHUB_TOKEN=...   # any token that can read both repos (not refreshed; 1h if an App token)
 cd house/live-mesh

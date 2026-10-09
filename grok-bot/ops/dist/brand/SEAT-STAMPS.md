@@ -14,7 +14,7 @@ Separate from **product** stamps (`STAMPS.md`).
 | **forge** | `🔥` | implementer |
 | **critic** | `✶` | eng reviewer |
 | **herald** | `📡` | Dist execute |
-| **magnet** | `☄️` | hangar discovery / listings |
+| **magnet** | `🧲` | hangar discovery / listings |
 | **sound** | `🎚️` | factory sound / Dist beds |
 | **sync** | `∞` | twin CoS (parked) |
 | **risk** | `🜏` | trade risk governor |

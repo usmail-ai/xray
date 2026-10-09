@@ -12,7 +12,7 @@
     header { animation: rise .6s ease-out both; }
     .title { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
     #mark { width: 112px; height: 44px; flex: none; }
-    .pill { display: inline-block; width: 11ch; text-align: center; white-space: nowrap; flex: none; font-size: 11px; font-weight: 700; letter-spacing: .08em; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--teal); color: #b8ffe9; background: #12382f; }
+    .pill { display: inline-block; width: 16ch; text-align: center; white-space: nowrap; flex: none; font-size: 11px; font-weight: 700; letter-spacing: .08em; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--teal); color: #b8ffe9; background: #12382f; }
     .pill::before { content: "\25CF  "; color: #ff5a4f; animation: blink 1.6s ease-in-out infinite; }
     .fleet { margin-left: auto; text-align: right; white-space: nowrap; font-size: 11px; line-height: 1.5; color: var(--dim); font-variant-numeric: tabular-nums; }
     .fleet b { color: var(--text); font-weight: 600; }
@@ -24,7 +24,7 @@
     @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
     @keyframes blink { 50% { opacity: .35; } }
     @media (prefers-reduced-motion: reduce) {
-      header, .pill::before { animation: none; }
+      header, .pill::before, .dot.blink { animation: none; }
       #mesh { transition: none; }
     }
     header h1 { font-size: 20px; margin: 0; letter-spacing: .04em; }
@@ -36,6 +36,7 @@
     .seats { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
     .seat { display: flex; gap: 8px; align-items: center; min-width: 0; }
     .dot { width: 14px; height: 14px; border-radius: 50%; background: #283246; flex: none; }
+    .dot.blink { animation: blink 1.1s ease-in-out infinite; }
     .seat .nm { font-weight: 700; font-size: 13px; }
     .seat .st { color: var(--dim); font-size: 11px; white-space: nowrap; }
     .seat.live .st { color: var(--text); }
@@ -123,7 +124,7 @@
   var canvas = document.getElementById('mesh');
   var ctx = canvas.getContext('2d');
   var $ = function (id) { return document.getElementById(id); };
-  var state = { events: [], live: true, t: Date.now(), generatedAt: null };
+  var state = { events: [], live: true, t: Date.now(), generatedAt: null, working: null, cursor: null };
   var playing = false, speed = 600, source = '', fetchError = '', lastFrame = performance.now();
   var orbit = 0, lastDraw = null, dragging = false;
   var flashes = [];            // live-mode pings: { e, start } in wall ms
@@ -270,7 +271,8 @@
       var pul = 0;
       pings.forEach(function (pk) { if (pk.src === key) pul = Math.max(pul, L.pulse(pk.p * L.PULSE_MS, reduced)); });
       ctx.globalAlpha = L.entry(since, i, reduced);
-      drawNode(key, !!hot[key], fs, pul);
+      var seatState = L.seatState(!!hot[key], !!L.seatWorking(state.working, Date.now())[key]);
+      drawNode(key, seatState, fs, pul);
       ctx.globalAlpha = 1;
     });
     return hot;
@@ -281,7 +283,8 @@
     ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   }
 
-  function drawNode(key, isHot, fs, pul) {
+  function drawNode(key, seatState, fs, pul) {
+    var isHot = seatState === 'working' || seatState === 'active';
     var xy = pos[key], x = xy[0], y = xy[1], c = L.COLOR[key], sq = !!L.SQUARE[key], r = sq ? 15 : 18 + 3 * pul;
     var img = imgs[key], glyph = L.GLYPH[key], mark = L.MARK_PATH[key];
     var bare = !sq && (!!glyph || !!(img && img.complete && img.naturalWidth));   // image / glyph seats: no ring
@@ -317,7 +320,7 @@
       }
     }
     if (!sq) r = 18;
-    var title = L.LABEL[key], sub = L.SUB[key];
+    var title = L.LABEL[key], sub = seatState;
     ctx.font = 'bold ' + 14 * fs + 'px system-ui, sans-serif';
     var tw = ctx.measureText(title).width;
     ctx.font = 11 * fs + 'px system-ui, sans-serif';
@@ -335,12 +338,15 @@
     var cur = shown ? state.events[shown - 1] : null;
     $('head').textContent = cur ? L.headline(cur) : '\u00a0';
     $('headTime').textContent = cur ? L.fmtCt(cur._t) + (state.live ? '' : ' · rewound') : '\u00a0';
+    var working = L.seatWorking(state.working, Date.now());
     L.AGENTS.forEach(function (a) {
-      var s = seatEls[a[0]], on = !!hot[a[0]], c = L.COLOR[a[0]];
-      s.el.classList.toggle('live', on);
-      s.dot.style.background = on ? rgb(c) : '#283246';
-      s.dot.style.boxShadow = on ? '0 0 0 2px #04060c, 0 0 0 4px ' + rgb(c) : 'none';
-      s.st.textContent = s.role + ' · ' + (on ? 'LIVE' : 'IDLE');
+      var s = seatEls[a[0]], c = L.COLOR[a[0]];
+      var seatState = L.seatState(!!hot[a[0]], !!working[a[0]]);
+      s.el.classList.toggle('live', seatState !== 'idle');
+      s.dot.classList.toggle('blink', seatState === 'working' && !reduced);
+      s.dot.style.background = seatState === 'idle' ? '#283246' : rgb(c);
+      s.dot.style.boxShadow = seatState === 'idle' ? 'none' : '0 0 0 2px #04060c, 0 0 0 4px ' + rgb(c);
+      s.st.textContent = s.role + ' · ' + seatState;
     });
     var logKey = shown + ':' + state.events.length;
     if (logKey !== lastLogKey) { lastLogKey = logKey; renderLog(shown); }
@@ -352,8 +358,9 @@
     if (!dragging || state.live) slider.value = state.live ? b[1] : state.t;
     $('tLabel').textContent = state.live ? 'now · ' + L.fmtCt(now) : L.fmtCt(state.t);
     $('live').classList.toggle('on', state.live);
-    $('pill').textContent = state.live ? 'LIVE' : 'REWOUND';
-    $('pill').classList.toggle('off', !state.live);
+    var fresh = L.freshnessLabel(state.generatedAt, now);
+    $('pill').textContent = fresh;
+    $('pill').classList.toggle('off', fresh !== 'LIVE');
     $('fleet').textContent = L.fleetLine(hot);
     $('blackout').textContent = L.blackoutLine(now);
     $('play').innerHTML = L.isPlaying(state.live, playing) ? '&#10074;&#10074; Pause' : '&#9654; Play';
@@ -415,25 +422,32 @@
     requestAnimationFrame(frame);
   }
 
-  var first = true;
+  var first = true, pollTimer = 0;
+  function armPoll() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(poll, mem.cursor ? L.BURST_POLL_MS : L.POLL_MS);
+  }
   function poll() {
     if (document.hidden && !first) return;
-    L.fetchFeed(window.fetch.bind(window), Date.now(), mem).then(function (r) {
+    var run = mem.cursor ? L.burstPoll(window.fetch.bind(window), Date.now(), mem) : L.fetchFeed(window.fetch.bind(window), Date.now(), mem);
+    run.then(function (r) {
       source = r.source; fetchError = '';
+      if (r.feed && r.feed.cursor) { mem.cursor = r.feed.cursor; armPoll(); }
       if (!r.feed) return;
       var out = L.applyFeed(state, r.feed, Date.now());
       state = out.state;
-      var fresh = first ? state.events.slice(-6) : state.events.filter(function (e) { return out.added.indexOf(e.id) >= 0; }).slice(-12);
+      if (state.cursor) mem.cursor = state.cursor;
+      var freshIds = first ? state.events.slice(-6) : state.events.filter(function (e) { return out.added.indexOf(e.id) >= 0; }).slice(-12);
       if (state.live) {
         var t0 = performance.now();
-        fresh.forEach(function (e, i) { flashes.push({ e: e, start: t0 + i * STAGGER_MS }); });
+        freshIds.forEach(function (e, i) { flashes.push({ e: e, start: t0 + i * STAGGER_MS }); });
       }
       first = false; lastText = 0; lastLogKey = '';
     }).catch(function (err) { fetchError = 'feed fetch failed, retrying'; lastText = 0; console.warn(err); });
   }
   document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
   poll();
-  setInterval(poll, L.POLL_MS);
+  armPoll();
   requestAnimationFrame(frame);
 })();
 </script>
