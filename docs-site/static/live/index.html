@@ -62,11 +62,34 @@
     .legend { color: var(--dim); font-size: 11px; }
     footer { color: var(--dim); font-size: 12px; }
     footer a { color: #3de0e8; }
+    .split { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; align-items: start; margin-bottom: 8px; }
+    .split .panel { margin-bottom: 0; max-height: 70vh; overflow: auto; }
+    .stage { margin: 8px 0 4px; color: var(--dim); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+    .wcard { display: block; width: 100%; text-align: left; margin: 0 0 6px; }
+    .meta { color: var(--dim); font-size: 11px; }
+    .wcard.amber { border-color: #e0a100; }
+    .wcard.stall { border-color: #ff5a4f; box-shadow: inset 3px 0 0 #ff5a4f; }
+    .wcard.glow { box-shadow: 0 0 0 1px var(--teal), 0 0 12px rgba(88, 210, 180, .45); }
+    .wcard.on { border-color: var(--teal); }
+    .badge { font-size: 10px; letter-spacing: .04em; border: 1px solid var(--line); border-radius: 999px; padding: 1px 6px; }
+    .wcard.amber .badge { color: #e0a100; border-color: #e0a100; }
+    #waveToggle { display: none; }
+    .packet { margin: 0; }
+    .packet div { display: grid; grid-template-columns: 8.5ch 1fr; gap: 6px; padding: 2px 0; }
+    .packet dt { color: var(--dim); }
+    .beat { padding: 3px 0; border-top: 1px solid #111a2a; font-size: 12px; }
     @media (max-width: 720px) {
       .seats { grid-template-columns: repeat(4, 1fr); }
       .fleet { white-space: normal; }
       #log li { grid-template-columns: 9ch 1fr; }
       #log .who { display: none; }
+      .split { grid-template-columns: 1fr; }
+      #waveToggle { display: inline-block; }
+      .split .detail { display: none; }
+      .split.open .detail { display: block; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .wcard.glow { box-shadow: inset 0 0 0 1px var(--teal); }
     }
   </style>
 </head>
@@ -108,6 +131,17 @@
     <span id="tLabel"></span>
   </section>
 
+  <section class="split" id="waveSplit" aria-label="Waveboard">
+    <div class="panel board">
+      <div class="lens-head">
+        <span>WAVEBOARD · cards by stage</span>
+        <button id="waveToggle" type="button">Packet</button>
+      </div>
+      <div id="waveBoard"></div>
+    </div>
+    <aside class="panel detail" id="wavePanel" aria-label="Packet"></aside>
+  </section>
+
   <section class="panel" aria-label="Activity">
     <div class="lens-head"><span>ACTIVITY · from feed (newest first, CT) · tap a row to rewind there</span></div>
     <ul id="log"></ul>
@@ -116,6 +150,7 @@
   <footer>Feed: <a href="live-events.json">live-events.json</a> (Pages copy) · source of truth is the <code>live-wire</code> branch.</footer>
 </main>
 <script src="live.js"></script>
+<script src="waveboard.js"></script>
 <script>
 (function () {
   'use strict';
@@ -422,6 +457,81 @@
     requestAnimationFrame(frame);
   }
 
+  var W = window.Waveboard;
+  var waveSeen = null;
+  var waveSelected = '';
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+  function paintWave() {
+    var board = state.waveboard;
+    var model = W.view(board, waveSelected, waveSeen);
+    var host = $('waveBoard');
+    host.textContent = '';
+    var any = false;
+    model.stages.forEach(function (stage) {
+      var group = model.groups[stage];
+      if (!group.length) return;
+      any = true;
+      host.appendChild(el('div', 'stage', stage));
+      group.forEach(function (card) {
+        var cls = 'wcard';
+        if (card.amber) cls += ' amber';
+        if (card.stall) cls += ' stall';
+        if (model.glow[card.id]) cls += ' glow';
+        if (card.id === waveSelected) cls += ' on';
+        var btn = el('button', cls);
+        btn.type = 'button';
+        btn.dataset.id = card.id;
+        btn.appendChild(el('div', '', card.title || card.id));
+        var meta = el('div', 'meta');
+        meta.appendChild(document.createTextNode((card.owner || 'unassigned') + ' · ' + card.stage + ' · ' + W.ageText(card.age_s)));
+        meta.appendChild(document.createTextNode(' '));
+        meta.appendChild(el('span', 'badge', card.badge || ''));
+        if (card.stall) meta.appendChild(el('span', 'badge', 'stall'));
+        btn.appendChild(meta);
+        host.appendChild(btn);
+      });
+    });
+    if (!any) host.appendChild(el('p', 'note', 'No open cards on this feed.'));
+    var panel = $('wavePanel');
+    panel.textContent = '';
+    var card = model.selected;
+    if (!card) {
+      panel.appendChild(el('p', 'note', 'Select a card.'));
+    } else {
+      panel.appendChild(el('div', '', card.title || card.id));
+      panel.appendChild(el('p', 'meta', (card.owner || 'unassigned') + ' · ' + card.stage + ' · ' + card.state));
+      var list = document.createElement('dl');
+      list.className = 'packet';
+      model.fields.forEach(function (pair) {
+        var row = document.createElement('div');
+        row.appendChild(el('dt', '', pair[1]));
+        row.appendChild(el('dd', '', (card.packet && card.packet[pair[0]]) || ''));
+        list.appendChild(row);
+      });
+      panel.appendChild(list);
+      (card.beats || []).slice(0, 5).forEach(function (beat) {
+        panel.appendChild(el('div', 'beat', beat.type + ' · ' + (beat.label || '')));
+      });
+    }
+    waveSeen = W.noteBeats((board && board.cards) || [], waveSeen);
+  }
+  $('waveBoard').addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button');
+    if (!btn || !btn.dataset.id) return;
+    waveSelected = btn.dataset.id;
+    var narrow = W.layout(window.innerWidth) === 'toggle';
+    if (narrow) $('waveSplit').classList.add('open');
+    paintWave();
+  });
+  $('waveToggle').addEventListener('click', function () {
+    $('waveSplit').classList.toggle('open');
+  });
+
   var first = true, pollTimer = 0;
   function armPoll() {
     if (pollTimer) clearInterval(pollTimer);
@@ -442,6 +552,7 @@
         var t0 = performance.now();
         freshIds.forEach(function (e, i) { flashes.push({ e: e, start: t0 + i * STAGGER_MS }); });
       }
+      paintWave();
       first = false; lastText = 0; lastLogKey = '';
     }).catch(function (err) { fetchError = 'feed fetch failed, retrying'; lastText = 0; console.warn(err); });
   }

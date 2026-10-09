@@ -343,6 +343,21 @@ class PushEventTests(unittest.TestCase):
         ff.pr_events(gh, "0xRayAI/xray", pr, self.SINCE)
         self.assertEqual(ff.REPRESENTED["0xRayAI/xray"], {"1" * 40, "2" * 40, "3" * 40})
 
+    def test_pr_body_packet_rides_the_existing_pull_without_another_read(self):
+        pr = {"number": 8, "title": "gate", "html_url": "https://github.com/org/repo/pull/8",
+              "user": {"login": "forge0x1[bot]"}, "head": {"ref": "mill/x", "sha": "a" * 40},
+              "created_at": "2026-10-06T12:00:00Z",
+              "body": "## Packet\n- goal: Ship the gate\n- acceptance: tests pass\n- next owner: reviewer\n"}
+        gh = mock.Mock()
+        gh.pages.side_effect = lambda path, *a, **k: iter([])
+        gh.get.return_value = {"check_runs": []}
+        out = ff.pr_events(gh, "org/repo", pr, self.SINCE)
+        self.assertEqual(gh.get.call_count, 1)
+        self.assertEqual(out[0]["_inbox"]["packet"]["goal"], "Ship the gate")
+        self.assertEqual(out[0]["_inbox"]["packet"]["next_owner"], "reviewer")
+        self.assertNotIn("body", out[0])
+        self.assertNotIn(pr["body"], json.dumps({k: v for k, v in out[0].items() if k != "_inbox"}))
+
     def test_live_wire_push_never_becomes_an_event(self):
         gh = self.FakeGH([self.push("1", "forge0x1[bot]", "live-wire", "7" * 40, [{"sha": "7" * 40, "message": "live-wire: replay snapshot"}])])
         self.assertEqual(ff.push_events(gh, "0xRayAI/xray", self.SINCE), [])

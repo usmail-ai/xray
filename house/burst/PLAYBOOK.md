@@ -112,7 +112,20 @@ A watcher reads its inbox first, stores the last id it handled, and still runs i
 
 Only ARCH1 is mirrored. The pusher posts new `arch1.jsonl` lines to `BURST_INBOX_URL`. The server answers `GET /inbox/arch1?since=<id>` after the same installation-token check as `POST /activity` (the arch1 seat, bot `arch10x1[bot]`). No other inbox is served.
 
-When the pass has new events, the loop may run the waveboard builder (`BURST_WAVEBOARD`, default `/workspace/0xray-fleet/house/watchers/build_waveboard.py` when that file exists). It runs at most once a minute, as a subprocess with a timeout, with the read-only GitHub token. If the builder is missing, off, or fails, the feed pass still finishes.
+When the pass has new events, the loop may run an optional waveboard builder (`BURST_WAVEBOARD`, default `/workspace/0xray-fleet/house/watchers/build_waveboard.py` when that file exists). It runs at most once a minute, as a subprocess with a timeout, with the read-only GitHub token. If the builder is missing, off, or fails, the feed pass still finishes.
+
+The live page also carries a waveboard split: cards on the left two thirds, the packet and the last five beats on the right third. Narrow screens turn that panel into a toggle. The page does not poll again. The feed pass reads the events it already collected, including a `## Packet` block on an issue or pull request body it already fetched, and the seat inbox files, then stores `waveboard` on the same feed. `WAVEBOARD.md` is rewritten from that model at most once a minute. Items in `waveboard-static.md` stay pinned. A live card with no beat for 60 minutes is a red stall in the coordinator inbox. A closed card drops off after 24 hours. A card missing acceptance or next owner is amber, badge `no packet`.
+
+```
+## Packet
+- goal:
+- constraints:
+- path:
+- acceptance:
+- evidence:
+- next owner:
+- escalate:
+```
 
 Routine prompt:
 
@@ -194,3 +207,4 @@ Set the token as the host variable `GITHUB_READ_TOKEN`. Do not put a GitHub App 
 13. **A prompt went quiet and a post could name another seat.** `seat` on `POST /activity` is optional. When it is present it must match the installation token, case-insensitive, or the response is 403 `seat mismatch`. The stored seat is the token's seat. There is no static key. A `SENT` prompt pulse keeps the seat working for 10 minutes, after display names resolve through seats aliases. An open `activity.jsonl` start still caps at 60 minutes. `fleet.missing_activity` lists seats that pulsed in the last 60 minutes with no activity line. The page does not show that list.
 
 14. **Watchers learned about a pull request only by polling.** The feed pass appends one inbox line per new event id. Critic gets new and updated pull requests. ARCH1 gets Critic PASS plus green CI on the same head sha. Chaos gets merges to develop. Operator gets Railway deploys and holds, lab issues, and asks for Railway, lab, labtest, or cloud agents. CoS gets stalls, watcher gaps, and Blaze or `needs-decision`. A watcher reads its inbox first and keeps its old checks as backup. Only `GET /inbox/arch1` is served, with the arch1 installation token. `WAVEBOARD.md` rebuilds from the same pass, at most once a minute. A builder failure does not stop the feed.
+15. **The waveboard had no live card.** The Spectrum page reads `waveboard` off the feed it already polls. The feed pass captures a packet from the issue or pull request body already in hand, and from the seat inboxes. No second poller and no extra GitHub read. A same-second watcher run is not a beat. A live card quiet for 60 minutes stalls to the coordinator inbox. Closed cards leave after 24 hours.
