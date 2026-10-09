@@ -1,0 +1,2 @@
+# review-sent.log — one line per routed review. Format: <UTC time> <repo>#<PR> sha=<sha> action=first-review|recheck|relook to=<seat>
+# The reviewer appends the line. A repeat of the same PR + SHA + action does nothing.

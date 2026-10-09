@@ -1,0 +1,3 @@
+# stall-sweep.log — one line per nudge (item + time). Never nudge the same item twice in one day.
+# A sweep that finds nothing writes one quiet line and sends nothing.
+# Example quiet line: 2026-10-09T14:09:00Z quiet

@@ -78,15 +78,36 @@ describe('grok-bot house template — USMail docs', () => {
       const result = initHouse({ dir, kitRoot: kit });
       expect(result.ok).toBe(true);
       expect(result.code).toBe(0);
-      const names = result.files.map((file) => path.basename(file)).sort();
-      expect(names).toEqual([
+      const rels = result.files
+        .map((file) => path.relative(path.join(dir, 'house'), file).split(path.sep).join('/'))
+        .sort();
+      expect(rels).toEqual([
         'ATTENTION_STATE.md',
         'AUTO-REVIEW.md',
         'HOUSE.md',
         'ROLE-MAP.md',
         'WAVEBOARD.md',
+        'fleet/activity.jsonl',
+        'fleet/prompts.jsonl',
+        'watchers/issue-sweep-last.txt',
+        'watchers/merge-queue.md',
+        'watchers/review-sent.log',
+        'watchers/stall-sweep.log',
+        'watchers/waveboard-static.md',
       ]);
-      expect(names).not.toContain('EXAMPLE.md');
+      expect(rels).not.toContain('EXAMPLE.md');
+      const queue = readFileSync(path.join(kit, 'templates', 'house', 'watchers', 'merge-queue.md'), 'utf8');
+      const cadenceDoc = 'https://github.com/0xRayAI/xray/blob/main/docs/opproc-cadence.md';
+      expect(queue).toContain(cadenceDoc);
+      expect(queue).toContain("lab tester's merge watcher");
+      expect(queue).not.toMatch(/\]\(\.{1,2}\//);
+      expect(readFileSync(path.join(dir, 'house', 'watchers', 'merge-queue.md'), 'utf8')).toBe(queue);
+      const board = readFileSync(path.join(kit, 'templates', 'house', 'watchers', 'waveboard-static.md'), 'utf8');
+      expect(board).toContain(cadenceDoc);
+      expect(board).toMatch(/^## Card rule$/m);
+      expect(board).toMatch(/^## Waiting on owner$/m);
+      expect(board).toMatch(/^## Standing$/m);
+      expect(readFileSync(path.join(kit, 'templates', 'house', 'HOUSE.md'), 'utf8')).toContain(cadenceDoc);
       const houseFile = path.join(dir, 'house', 'HOUSE.md');
       const filled = readFileSync(houseFile, 'utf8').replace(/^\s*[-*]?\s*\(example\).*$/gm, 'filled.');
       writeFileSync(houseFile, filled);
