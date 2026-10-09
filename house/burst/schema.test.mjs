@@ -41,13 +41,19 @@ test('prompt and cloud-agent lines match their schemas kinds', () => {
 
 test('a fleet activity line is the same object POST /activity accepts', () => {
   const lines = activity.$defs.seatActivity.examples;
-  assert.equal(lines.length, 4);
+  assert.equal(lines.length, 6);
   for (const line of lines) {
     assert.equal(validActivity(line, now), null, JSON.stringify(line));
     assert.ok(['subagent', 'turn', 'watcher'].includes(line.kind));
     assert.ok(['start', 'end'].includes(line.action));
     assert.ok(line.tag.length <= 80);
   }
+  for (const kind of ['turn', 'subagent', 'watcher']) {
+    const pair = lines.filter((line) => line.kind === kind);
+    assert.deepEqual(pair.map((line) => line.action), ['start', 'end']);
+    assert.equal(pair[0].tag, pair[1].tag);
+  }
+  assert.equal(lines.find((line) => line.kind === 'subagent').tag, 'computerUse');
 });
 
 test('each sample plate has the stamp fields', () => {
