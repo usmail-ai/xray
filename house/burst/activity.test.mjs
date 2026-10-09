@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { acceptLine, clearTokenCache, installTokenShape, postActivity, validActivity, verifyInstallationToken, tokenCacheKeys } from './activity.mjs';
+import { acceptLine, clearTokenCache, getInbox, inboxRequest, installTokenShape, postActivity, postInbox, validActivity, verifyInstallationToken, tokenCacheKeys } from './activity.mjs';
 
 const now = Date.parse('2026-10-09T14:00:00Z');
 
@@ -66,8 +66,8 @@ test('an optional seat matches the token case-insensitively and the stored seat 
   assert.equal(lines[1].by, 'builder');
 });
 
-function liveToken() {
-  const chunk = 'A'.repeat(40) + '.' + '_'.repeat(40) + '-';
+function liveToken(mark = 'A') {
+  const chunk = mark.repeat(40) + '.' + '_'.repeat(40) + '-';
   return 'ghs_' + chunk.repeat(6);
 }
 
@@ -143,4 +143,67 @@ test('github 5xx is 503 and is not cached', async () => {
   const out = await verifyInstallationToken(token, seats, fetchFn, now);
   assert.equal(out.status, 503);
   assert.equal(tokenCacheKeys().length, 0);
+});
+
+const archSeats = [
+  { seat: 'arch1', bot: 'arch10x1[bot]', botId: 42, org: 'example-org' },
+  { seat: 'builder', bot: 'builder-bot[bot]', botId: 1001, org: 'example-org' },
+];
+
+function fetchAs(login, id) {
+  return async (url) => {
+    if (String(url).endsWith('/graphql')) {
+      return { status: 200, ok: true, json: async () => ({ data: { viewer: { login, databaseId: id } } }) };
+    }
+    return { status: 200, ok: true, json: async () => ({ repositories: [{ owner: { login: 'example-org' } }] }) };
+  };
+}
+
+function inboxLine(id, seat = 'arch1') {
+  return {
+    id, t_ct: '2026-10-09T14:00:00Z', seat, type: 'ready', repo: 'org/repo', number: 1,
+    sha: 'a'.repeat(40), title: 'ready', url: 'https://github.com/org/repo/pull/1',
+    reason: 'critic pass and green ci',
+  };
+}
+
+test('GET /inbox/arch1 requires the arch1 installation token and since returns later lines', async () => {
+  clearTokenCache();
+  const lines = [];
+  const secret = 'ingest-secret-example';
+  const first = await postInbox({
+    secret, headerSecret: secret, lines,
+    body: JSON.stringify({ lines: [inboxLine('ready-1'), inboxLine('ready-2')] }),
+  });
+  assert.equal(first.status, 200);
+  assert.equal(first.added, 2);
+  const again = await postInbox({
+    secret, headerSecret: secret, lines,
+    body: JSON.stringify({ lines: [inboxLine('ready-2'), inboxLine('ready-3')] }),
+  });
+  assert.equal(again.added, 1);
+  assert.deepEqual(lines.map((line) => line.id), ['ready-1', 'ready-2', 'ready-3']);
+  const missing = await getInbox({ token: '', seats: archSeats, lines, fetchFn: fetchAs('arch10x1[bot]', 42) });
+  assert.equal(missing.status, 401);
+  const other = await getInbox({
+    token: liveToken('B'), seats: archSeats, lines, fetchFn: fetchAs('builder-bot[bot]', 1001), now,
+  });
+  assert.equal(other.status, 403);
+  assert.equal(other.error, 'inbox is not exposed');
+  const ok = await getInbox({
+    token: liveToken('C'), seats: archSeats, lines, since: 'ready-1', fetchFn: fetchAs('arch10x1[bot]', 42), now,
+  });
+  assert.equal(ok.status, 200);
+  assert.deepEqual(ok.lines.map((line) => line.id), ['ready-2', 'ready-3']);
+  const hidden = await inboxRequest({
+    method: 'GET', pathname: '/inbox/critic', token: liveToken('C'), seats: archSeats, lines,
+    fetchFn: fetchAs('arch10x1[bot]', 42), now,
+  });
+  assert.equal(hidden.status, 404);
+  const critic = await postInbox({
+    secret, headerSecret: secret, lines,
+    body: JSON.stringify({ lines: [inboxLine('nope', 'critic')] }),
+  });
+  assert.equal(critic.status, 403);
+  assert.equal(lines.length, 3);
 });

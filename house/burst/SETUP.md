@@ -43,6 +43,8 @@ Files in this tree:
 |---|---|
 | [PLAYBOOK.md](PLAYBOOK.md) | Every watcher, active vs working, LIVE vs behind, fixes log |
 | [activity.schema.json](activity.schema.json) | Line an agent submits |
+| [inbox.schema.json](inbox.schema.json) | One routed line in `fleet/inbox/<seat>.jsonl` |
+| [inbox-roles.json](inbox-roles.json) | Which events each seat's inbox receives |
 | [prompts.schema.json](prompts.schema.json) | `prompts.jsonl` line |
 | [cloud-agent.schema.json](cloud-agent.schema.json) | `cloud-agents.jsonl` line |
 | [plate.schema.json](plate.schema.json) | Identity stamp |
@@ -341,6 +343,35 @@ while true; do
   date +%s > "$BURST_STATE/heartbeat"
   sleep 30
 done
+```
+
+### Seat inboxes
+
+The host feed loop writes one line per new event id. It does not go through the page server. `BURST_INBOX` sets the directory (default `fleet/inbox`). On the USMail collector the default is `/workspace/live-mesh-run/fleet/inbox`. Roles are [inbox-roles.json](inbox-roles.json). The line is [inbox.schema.json](inbox.schema.json).
+
+| Seat | File | What arrives |
+|---|---|---|
+| Critic | `critic.jsonl` | new and updated pull requests |
+| ARCH1 | `arch1.jsonl` | Critic PASS and green CI on the same head sha |
+| Chaos | `chaos.jsonl` | merges to `develop` |
+| Operator | `operator.jsonl` | Railway deploys and holds, lab issues, and issues or comments asking for Railway, lab, labtest, or cloud agents, or mentioning Operator or operator0x |
+| CoS | `cos.jsonl` | stalls (no activity on an open pull request for `stall_hours`, default 6), watcher gaps, and anything labeled or mentioning Blaze or `needs-decision` |
+
+A watcher reads its own file first and records the last id. It keeps its current checks as a backup. Files are trimmed to `keep_days` (default 7).
+
+Only ARCH1 is uploaded. `push-inbox.mjs` posts new lines from `arch1.jsonl` to `BURST_INBOX_URL`. `GET /inbox/arch1?since=<id>` requires the arch1 GitHub App installation token, the same check as `POST /activity` (bot `arch10x1[bot]`). Other seats are not exposed.
+
+When a pass has new events, the loop runs the waveboard builder if it is configured. `BURST_WAVEBOARD` is the script path. When unset, the USMail path `/workspace/0xray-fleet/house/watchers/build_waveboard.py` is used if that file exists. The run is debounced to once a minute, in a subprocess with a timeout, and it receives only `GITHUB_READ_TOKEN`. Set `BURST_WAVEBOARD=off` to skip it. A failure does not stop the feed.
+
+Routine prompt:
+
+```
+Read fleet/inbox/<seat>.jsonl first. Keep a cursor: the last id you already handled. Act on each newer line, using title, url, and reason. Then run your current checks as a backup in case a line was missed. Do not write a watcher line when the inbox and the backup are both empty.
+```
+
+```json
+{"id":"org/repo#1:open","t_ct":"2026-10-09T09:00:00-05:00","seat":"critic","type":"pr_open","repo":"org/repo","number":1,"title":"org/repo #1 opened","url":"https://github.com/org/repo/pull/1","reason":"new or updated pr"}
+{"id":"org/repo#1:push:abcdef012345","t_ct":"2026-10-09T09:10:00-05:00","seat":"critic","type":"pr_update","repo":"org/repo","number":1,"sha":"abcdef012345abcdef012345abcdef01234567","title":"org/repo #1 update","url":"https://github.com/org/repo/pull/1","reason":"new or updated pr"}
 ```
 
 ### Activity

@@ -271,12 +271,24 @@ def pr_events(gh: GitHub, repo: str, pr: dict, since: datetime) -> list[dict]:
     author = seat_of(pr["user"]["login"], pr["head"]["ref"])
     out: list[dict] = []
     t_since = since.isoformat()
+    head = pr.get("head") or {}
+    base = (pr.get("base") or {}).get("ref")
+    labels = [lb.get("name") for lb in (pr.get("labels") or []) if isinstance(lb, dict) and lb.get("name")]
+
+    def add(event: dict, **more):
+        hints = {"sha": head.get("sha"), "base": base, "title": title, "labels": labels}
+        hints.update(more)
+        kept = {key: val for key, val in hints.items() if val not in (None, "", [])}
+        if kept:
+            event["_inbox"] = kept
+        out.append(event)
+        return event
 
     def recent(t: str | None) -> bool:
         return bool(t) and datetime.fromisoformat(t.replace("Z", "+00:00")) >= since
 
     if recent(pr["created_at"]):
-        out.append(ev(f"{repo}#{n}:open", pr["created_at"], author, "GitHub", "pr_open",
+        add(ev(f"{repo}#{n}:open", pr["created_at"], author, "GitHub", "pr_open",
                       f"{tag} opened · {title}", url, repo, n))
     # Pushes after open = fix / update volley.
     commits = list(gh.pages(f"/repos/{repo}/pulls/{n}/commits", limit=3))
@@ -287,9 +299,9 @@ def pr_events(gh: GitHub, repo: str, pr: dict, since: datetime) -> list[dict]:
     for c in commits[1:]:
         t = c["commit"]["committer"]["date"]
         if recent(t) and t > pr["created_at"]:
-            out.append(ev(f"{repo}#{n}:push:{c['sha'][:12]}", t, author, "GitHub", "pr_update",
-                          f"{tag} update · {c['commit']['message'].splitlines()[0]}",
-                          f"{url}/commits/{c['sha']}", repo, n))
+            add(ev(f"{repo}#{n}:push:{c['sha'][:12]}", t, author, "GitHub", "pr_update",
+                   f"{tag} update · {c['commit']['message'].splitlines()[0]}",
+                   f"{url}/commits/{c['sha']}", repo, n), sha=c["sha"])
     # Reviews: critic App reviews or any review whose body carries a Light verdict.
     for r in gh.pages(f"/repos/{repo}/pulls/{n}/reviews", limit=2):
         t = r.get("submitted_at")
@@ -298,11 +310,11 @@ def pr_events(gh: GitHub, repo: str, pr: dict, since: datetime) -> list[dict]:
         who = seat_of(r["user"]["login"])
         v = verdict(r.get("body") or "") or {"APPROVED": "PASS", "CHANGES_REQUESTED": "FAIL"}.get(r["state"])
         if who == "critic" and v:
-            out.append(ev(f"{repo}#{n}:review:{r['id']}", t, "critic", author, f"critic_{v.lower()}",
-                          f"critic {v} · {tag}", r["html_url"], repo, n))
+            add(ev(f"{repo}#{n}:review:{r['id']}", t, "critic", author, f"critic_{v.lower()}",
+                   f"critic {v} · {tag}", r["html_url"], repo, n))
         else:
-            out.append(ev(f"{repo}#{n}:review:{r['id']}", t, who, author, "review",
-                          f"{who} review {r['state'].lower()} · {tag}", r["html_url"], repo, n))
+            add(ev(f"{repo}#{n}:review:{r['id']}", t, who, author, "review",
+                   f"{who} review {r['state'].lower()} · {tag}", r["html_url"], repo, n))
     # Issue comments: critic Light notes, supersede notes, other seat chatter on the PR.
     for c in gh.pages(f"/repos/{repo}/issues/{n}/comments", {"since": t_since}, limit=2):
         out.extend(comment_events(repo, n, tag, author, c))
@@ -333,21 +345,33 @@ def pr_events(gh: GitHub, repo: str, pr: dict, since: datetime) -> list[dict]:
         slug = (cr.get("app") or {}).get("slug", "")
         v = "PASS" if concl == "success" else "FAIL"
         if "critic" in slug or "critic" in cr["name"].lower():
-            out.append(ev(f"{repo}#{n}:check:{cr['id']}", t, "critic", author, f"critic_{v.lower()}",
-                          f"critic {v} · {tag}", cr["html_url"], repo, n))
+            add(ev(f"{repo}#{n}:check:{cr['id']}", t, "critic", author, f"critic_{v.lower()}",
+                   f"critic {v} · {tag}", cr["html_url"], repo, n))
         elif cr["name"] == "CI Summary":
-            out.append(ev(f"{repo}#{n}:ci:{cr['id']}", t, "GitHub", author, f"ci_{v.lower()}",
-                          f"CI {v.lower()} · {tag}", cr["html_url"], repo, n))
+            add(ev(f"{repo}#{n}:ci:{cr['id']}", t, "GitHub", author, f"ci_{v.lower()}",
+                   f"CI {v.lower()} · {tag}", cr["html_url"], repo, n),
+                conclusion="success" if v == "PASS" else "failure", name=cr["name"])
     if pr.get("merged_at") and recent(pr["merged_at"]):
         merger = seat_of((pr.get("merged_by") or {}).get("login")) if pr.get("merged_by") else "forge"
         if merger == "GitHub":
             merger = "forge"
-        out.append(ev(f"{repo}#{n}:merged", pr["merged_at"], merger, "GitHub", "merged",
-                      f"merged {tag} · {title}", url, repo, n))
+        add(ev(f"{repo}#{n}:merged", pr["merged_at"], merger, "GitHub", "merged",
+               f"merged {tag} · {title}", url, repo, n), sha=pr.get("merge_commit_sha") or head.get("sha"))
     elif pr.get("closed_at") and recent(pr["closed_at"]):
-        out.append(ev(f"{repo}#{n}:closed", pr["closed_at"], author, "GitHub", "pr_close",
-                      f"closed {tag} unmerged", url, repo, n))
+        add(ev(f"{repo}#{n}:closed", pr["closed_at"], author, "GitHub", "pr_close",
+               f"closed {tag} unmerged", url, repo, n))
     return out
+
+
+def _carry_text(events: list[dict], text: str) -> list[dict]:
+    """Keep comment text on a private hint. write() strips it before the feed file."""
+    if not text:
+        return events
+    for event in events:
+        hints = dict(event.get("_inbox") or {})
+        hints["text"] = text
+        event["_inbox"] = hints
+    return events
 
 
 def comment_events(repo: str, n: int, tag: str, author: str, c: dict) -> list[dict]:
@@ -356,8 +380,8 @@ def comment_events(repo: str, n: int, tag: str, author: str, c: dict) -> list[di
     v = verdict(body)
     eid = f"{repo}#{n}:comment:{c['id']}"
     if who == "critic" and v:
-        return [ev(eid, c["created_at"], "critic", author, f"critic_{v.lower()}",
-                   f"critic {v} · {tag}", c["html_url"], repo, n)]
+        return _carry_text([ev(eid, c["created_at"], "critic", author, f"critic_{v.lower()}",
+                               f"critic {v} · {tag}", c["html_url"], repo, n)], body)
     out = []
     if v:
         # A seat comment that states a Light verdict (e.g. forge: "Superseded ... after Light FAIL").
@@ -373,7 +397,7 @@ def comment_events(repo: str, n: int, tag: str, author: str, c: dict) -> list[di
     elif not v:
         out.append(ev(eid, c["created_at"], who, author if author != who else "GitHub", "comment",
                       f"{who} comment · {tag}", c["html_url"], repo, n))
-    return out
+    return _carry_text(out, body)
 
 
 def issue_events(gh: GitHub, repo: str, since: datetime) -> list[dict]:
@@ -385,9 +409,12 @@ def issue_events(gh: GitHub, repo: str, since: datetime) -> list[dict]:
         n, tag = i["number"], f"{short(repo)} issue #{i['number']}"
         who = seat_of(i["user"]["login"])
         created = datetime.fromisoformat(i["created_at"].replace("Z", "+00:00"))
+        labels = [lb.get("name") for lb in (i.get("labels") or []) if isinstance(lb, dict) and lb.get("name")]
         if created >= since:
-            out.append(ev(f"{repo}!{n}:open", i["created_at"], who, "GitHub", "issue_open",
-                          f"{tag} opened · {i['title']}", i["html_url"], repo, n))
+            opened = ev(f"{repo}!{n}:open", i["created_at"], who, "GitHub", "issue_open",
+                        f"{tag} opened · {i['title']}", i["html_url"], repo, n)
+            opened["_inbox"] = {"title": i.get("title") or "", "labels": labels, "text": i.get("body") or ""}
+            out.append(opened)
         if i.get("closed_at") and datetime.fromisoformat(i["closed_at"].replace("Z", "+00:00")) >= since:
             out.append(ev(f"{repo}!{n}:closed", i["closed_at"], who, "GitHub", "issue_close",
                           f"{tag} closed", i["html_url"], repo, n))
@@ -501,6 +528,9 @@ def deploy_events(gh: GitHub, repo: str, since: datetime) -> list[dict]:
                final.get("target_url") or final.get("environment_url") or d["url"], repo, None,
                note=f"env {d.get('environment')}; sha {d['sha'][:8]}")
         e["src_file"] = "github-deployments"
+        env_name = str(d.get("environment") or "")
+        e["_inbox"] = {"sha": d.get("sha") or "", "title": e["label"], "name": env_name,
+                       "hold": "hold" in env_name.casefold()}
         DEPLOY_CACHE[d["id"]] = e
         out.append(e)
     return out
@@ -764,6 +794,19 @@ def merge(events: list[dict]) -> list[dict]:
             win.setdefault(k, v)
         best[e["id"]] = win
     return sorted(best.values(), key=order_key)
+
+
+def _burst_inbox():
+    name = "burst_inbox"
+    if name in sys.modules:
+        return sys.modules[name]
+    path = Path(__file__).resolve().parents[1] / "burst" / "inbox.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def _burst_working():
@@ -1040,6 +1083,13 @@ def _keep_box_working(feed: dict, out: Path) -> None:
     feed["working"] = working
 
 
+def _scrub_private(feed: dict) -> None:
+    """Drop routing hints before the feed is written. Bodies never land in the file."""
+    for event in feed.get("events") or []:
+        if isinstance(event, dict):
+            event.pop("_inbox", None)
+
+
 def write(feed: dict, out: Path) -> int:
     _keep_box_working(feed, out)
     feed["cursor"] = next_cursor(out)
@@ -1051,6 +1101,14 @@ def write(feed: dict, out: Path) -> int:
             if line.strip():
                 old_ids.add(json.loads(line).get("id", ""))
     new = [e for e in feed["events"] if e["id"] not in old_ids]
+    try:
+        routed = _burst_inbox()
+        routed.deliver(new, feed.get("events") or [])
+        routed.maybe_waveboard(len(new), log=log)
+    except Exception as exc:
+        log(f"inbox route skipped ({type(exc).__name__})")
+    finally:
+        _scrub_private(feed)
     tmp = out.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(feed, indent=2, ensure_ascii=False) + "\n")
     os.replace(tmp, out)

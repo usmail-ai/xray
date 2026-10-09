@@ -10,6 +10,8 @@ flock -n 9 || exit 0
 here=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 # Post the delta while the lock is held. A 409 refetches the feed and posts once more.
 node "$here/push-delta.mjs" || exit $?
+# arch1 inbox only. A miss does not drop the lock or skip the sleep.
+node "$here/push-inbox.mjs" || echo "inbox mirror failed" >&2
 # The sleep must not inherit fd 9.
 sleep "$CHECK" 9>&-
 exec 9>&-
