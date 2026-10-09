@@ -1,6 +1,6 @@
 {
   "name": "@0xray/grok-bot",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Complete setup path for Grok Bot agents on 0xRay: per-agent suits, Groover identity, OWS pay, hangar shops. Seat doctor/ready proves mill+inspect and prints hangar/Clearing next steps.",
   "license": "MIT",
   "bin": {

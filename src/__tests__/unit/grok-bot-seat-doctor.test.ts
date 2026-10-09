@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,6 +40,7 @@ const {
       file: string | null;
       via: string | null;
       missing?: string;
+      warnings?: string[];
     };
     next: string[];
     urls: { clearing: string };
@@ -654,5 +655,206 @@ describe('grok-bot seat doctor — CLI', () => {
     });
     expect(code).toBe(2);
     expect(chunks.join('')).toMatch(/unknown flag/);
+  });
+});
+
+describe('grok-bot seat doctor — cadence warnings', () => {
+  function writeHouse(dir: string, body: string): void {
+    mkdirSync(path.join(dir, 'house'), { recursive: true });
+    writeFileSync(path.join(dir, 'house', 'HOUSE.md'), body);
+  }
+
+  function cadenceHouse(dir: string): void {
+    writeHouse(
+      dir,
+      '# House\n\n## Owner\nAda.\n\n## Cadence\nOptional. Delete this section if your house has no code loop.\n',
+    );
+  }
+
+  function writeLog(dir: string, name: string, body: string): string {
+    const file = path.join(dir, 'house', 'watchers', name);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, body);
+    return file;
+  }
+
+  function freshStamp(): string {
+    return new Date().toISOString();
+  }
+
+  function freshLogs(dir: string): void {
+    const line = `${freshStamp()} quiet\n`;
+    writeLog(dir, 'review-sent.log', line);
+    writeLog(dir, 'stall-sweep.log', line);
+  }
+
+  function writeActivity(dir: string, body: string): string {
+    const file = path.join(dir, 'house', 'fleet', 'activity.jsonl');
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, body);
+    return file;
+  }
+
+  function goodActivity(dir: string): void {
+    writeActivity(
+      dir,
+      `${JSON.stringify({
+        t_ct: freshStamp(),
+        seat: 'reviewer',
+        kind: 'watcher',
+        action: 'end',
+        tag: 'pr',
+      })}\n`,
+    );
+  }
+
+  function codexText(count: number, lastUpdated: string): string {
+    const terms: Record<string, { number: number }> = {};
+    for (let i = 1; i <= count; i += 1) terms[String(i)] = { number: i };
+    return `${JSON.stringify({ version: '3.1.0', lastUpdated, terms })}\n`;
+  }
+
+  function writeSuitCodex(dir: string, count: number, lastUpdated: string): void {
+    mkdirSync(path.join(dir, '.xray'), { recursive: true });
+    writeFileSync(path.join(dir, '.xray', 'codex.json'), codexText(count, lastUpdated));
+  }
+
+  function writeInstalledCodex(dir: string, count: number, lastUpdated: string): void {
+    const dest = path.join(dir, 'node_modules', '0xray', '.xray');
+    mkdirSync(dest, { recursive: true });
+    writeFileSync(path.join(dest, 'codex.json'), codexText(count, lastUpdated));
+  }
+
+  function planted(dir: string): void {
+    writeSeat(dir);
+    plantMillInspect(dir);
+  }
+
+  function warningsOf(dir: string, env: Record<string, string> = {}): string[] {
+    return diagnoseSeat({ cwd: dir, home: dir, env }).house.warnings ?? [];
+  }
+
+  it('warns when stall-sweep.log is older than 2h and does not fail the plant', () => {
+    const dir = scratch();
+    try {
+      planted(dir);
+      cadenceHouse(dir);
+      writeLog(dir, 'review-sent.log', `${freshStamp()} org/app#1 sha=abc action=first-review to=reviewer\n`);
+      writeLog(dir, 'stall-sweep.log', '2020-01-01T00:00:00Z quiet\n');
+      goodActivity(dir);
+      const report = diagnoseSeat({ cwd: dir, home: dir, env: {} });
+      expect(report.house.status).toBe('pass');
+      expect(report.ok).toBe(true);
+      const warnings = report.house.warnings ?? [];
+      expect(warnings.some((line) => line.includes('stall-sweep.log is older than 2h'))).toBe(true);
+      expect(warnings.some((line) => line.includes('review-sent.log'))).toBe(false);
+      expect(formatDoctor(report)).toMatch(/House: PASS/);
+      expect(formatDoctor(report)).toMatch(/House: WARN — stall-sweep\.log is older than 2h/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('warns when a watcher log is missing or its mtime is older than 2h', () => {
+    const dir = scratch();
+    try {
+      cadenceHouse(dir);
+      writeLog(dir, 'stall-sweep.log', `${freshStamp()} quiet\n`);
+      goodActivity(dir);
+      expect(warningsOf(dir).some((line) => line.includes('review-sent.log is missing'))).toBe(true);
+      const review = writeLog(dir, 'review-sent.log', '# header only\n');
+      const old = new Date(Date.now() - 3 * 60 * 60 * 1000);
+      utimesSync(review, old, old);
+      expect(warningsOf(dir).some((line) => line.includes('review-sent.log is older than 2h'))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('checks the activity log last line and honors BURST_ACTIVITY', () => {
+    const dir = scratch();
+    try {
+      cadenceHouse(dir);
+      freshLogs(dir);
+      writeActivity(dir, 'free text is not a line\n');
+      expect(warningsOf(dir).some((line) => line.includes('activity log last line is not JSON'))).toBe(true);
+      writeActivity(dir, `${JSON.stringify({ t_ct: freshStamp(), kind: 'turn', action: 'start' })}\n`);
+      expect(warningsOf(dir).some((line) => line.includes('needs t_ct, kind, action, and seat'))).toBe(true);
+      const elsewhere = path.join(dir, 'pulses.jsonl');
+      writeFileSync(
+        elsewhere,
+        `${JSON.stringify({ t_ct: freshStamp(), seat: 'reviewer', kind: 'turn', action: 'end', tag: 'note' })}\n`,
+      );
+      const overridden = warningsOf(dir, { BURST_ACTIVITY: elsewhere });
+      expect(overridden.some((line) => line.includes('activity log'))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('hints migrate when watchers exist and skips cadence checks without a Cadence section', () => {
+    const dir = scratch();
+    try {
+      planted(dir);
+      writeHouse(dir, '# House\n\n## Owner\nAda.\n');
+      writeLog(dir, 'stall-sweep.log', '2020-01-01T00:00:00Z quiet\n');
+      writeSuitCodex(dir, 69, '2026-08-24');
+      writeInstalledCodex(dir, 70, '2026-10-01');
+      const report = diagnoseSeat({ cwd: dir, home: dir, env: {} });
+      expect(report.house.status).toBe('pass');
+      expect(report.ok).toBe(true);
+      const warnings = report.house.warnings ?? [];
+      expect(warnings).toEqual(['HOUSE.md has no Cadence section; grok-bot house init --migrate']);
+      expect(formatDoctor(report)).toMatch(/grok-bot house init --migrate/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not hint migrate when the house has no watchers directory', () => {
+    const dir = scratch();
+    try {
+      writeHouse(dir, '# House\n\n## Owner\nAda.\n');
+      expect(warningsOf(dir)).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('warns when the suit codex term count or lastUpdated differs from node_modules/0xray', () => {
+    const dir = scratch();
+    try {
+      planted(dir);
+      cadenceHouse(dir);
+      freshLogs(dir);
+      goodActivity(dir);
+      writeSuitCodex(dir, 69, '2026-08-24');
+      writeInstalledCodex(dir, 70, '2026-10-01');
+      const report = diagnoseSeat({ cwd: dir, home: dir, env: {} });
+      expect(report.ok).toBe(true);
+      expect(report.house.status).toBe('pass');
+      const warnings = report.house.warnings ?? [];
+      expect(warnings.some((line) => line.includes('69 terms') && line.includes('70 terms'))).toBe(true);
+      writeSuitCodex(dir, 70, '2026-08-24');
+      const dated = warningsOf(dir);
+      expect(dated.some((line) => line.includes('2026-08-24') && line.includes('2026-10-01'))).toBe(true);
+      writeSuitCodex(dir, 70, '2026-10-01');
+      expect(warningsOf(dir)).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not warn about codex when node_modules/0xray has no codex', () => {
+    const dir = scratch();
+    try {
+      cadenceHouse(dir);
+      freshLogs(dir);
+      goodActivity(dir);
+      writeSuitCodex(dir, 69, '2026-08-24');
+      expect(warningsOf(dir).some((line) => line.includes('codex'))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

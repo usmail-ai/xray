@@ -235,7 +235,174 @@ function fileFromHouseEnv(envValue) {
   return null;
 }
 
-function inspectHouseFile(file, via) {
+function hasCadence(text) {
+  return CADENCE_HEADING.test(text);
+}
+
+function watchersDir(houseFile) {
+  return path.join(path.dirname(houseFile), 'watchers');
+}
+
+function dirExists(dir) {
+  try {
+    return fs.statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function newestLogMs(file) {
+  if (!isFile(file)) return null;
+  const text = fs.readFileSync(file, 'utf8');
+  let newest = null;
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    STAMP_RE.lastIndex = 0;
+    const stamps = trimmed.match(STAMP_RE);
+    if (!stamps) continue;
+    for (const stamp of stamps) {
+      const ms = Date.parse(stamp);
+      if (Number.isNaN(ms)) continue;
+      if (newest === null || ms > newest) newest = ms;
+    }
+  }
+  if (newest !== null) return newest;
+  try {
+    return fs.statSync(file).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+function staleLogWarning(houseFile, name, now) {
+  const file = path.join(watchersDir(houseFile), name);
+  if (!isFile(file)) return `${name} is missing (${file})`;
+  const newest = newestLogMs(file);
+  if (newest === null) return `${name} is missing (${file})`;
+  if (now - newest > STALE_LOG_MS) return `${name} is older than 2h (${file})`;
+  return null;
+}
+
+function activityLogFile(cwd, houseFile, env) {
+  const raw = env && typeof env.BURST_ACTIVITY === 'string' ? env.BURST_ACTIVITY.trim() : '';
+  if (raw) return path.resolve(cwd, raw);
+  return path.join(path.dirname(houseFile), 'fleet', 'activity.jsonl');
+}
+
+function activityWarning(file) {
+  if (!isFile(file)) return `activity log is missing (${file})`;
+  let text = '';
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return `activity log is missing (${file})`;
+  }
+  const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  if (lines.length === 0) return `activity log has no JSON line (${file})`;
+  const last = lines[lines.length - 1];
+  let parsed;
+  try {
+    parsed = JSON.parse(last);
+  } catch {
+    return `activity log last line is not JSON (${file})`;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return `activity log last line is not JSON (${file})`;
+  }
+  for (const key of ACTIVITY_KEYS) {
+    if (typeof parsed[key] !== 'string' || parsed[key].trim() === '') {
+      return `activity log last line needs t_ct, kind, action, and seat (${file})`;
+    }
+  }
+  return null;
+}
+
+function codexFacts(json) {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
+  const terms = json.terms;
+  if (!terms || typeof terms !== 'object' || Array.isArray(terms)) return null;
+  return {
+    count: Object.keys(terms).length,
+    lastUpdated: typeof json.lastUpdated === 'string' ? json.lastUpdated : '',
+  };
+}
+
+function readCodexAt(root) {
+  const suitPath = path.join(root, '.xray', 'codex.json');
+  const installedPath = path.join(root, 'node_modules', '0xray', '.xray', 'codex.json');
+  return {
+    suit: isFile(suitPath) ? readJson(suitPath) : null,
+    installed: isFile(installedPath) ? readJson(installedPath) : null,
+    suitFound: isFile(suitPath),
+    installedFound: isFile(installedPath),
+  };
+}
+
+function codexWarning(cwd, houseFile) {
+  const roots = [path.resolve(cwd)];
+  const houseDir = path.dirname(houseFile);
+  if (path.basename(houseDir) === 'house') {
+    const parent = path.resolve(path.dirname(houseDir));
+    if (!roots.includes(parent)) roots.push(parent);
+  }
+  let suit = null;
+  let installed = null;
+  let suitFound = false;
+  let installedFound = false;
+  for (const root of roots) {
+    const found = readCodexAt(root);
+    if (!suitFound && found.suitFound) {
+      suitFound = true;
+      suit = found.suit;
+    }
+    if (!installedFound && found.installedFound) {
+      installedFound = true;
+      installed = found.installed;
+    }
+  }
+  if (!installedFound) return null;
+  const installedFacts = codexFacts(installed);
+  const installedLabel = installedFacts
+    ? `${installedFacts.count} terms (${installedFacts.lastUpdated || 'no lastUpdated'})`
+    : 'unreadable';
+  if (!suitFound) {
+    return `suit .xray/codex.json is missing; node_modules/0xray has ${installedLabel}`;
+  }
+  const suitFacts = codexFacts(suit);
+  if (!suitFacts || !installedFacts) {
+    return 'suit codex could not be compared with node_modules/0xray';
+  }
+  if (suitFacts.count !== installedFacts.count || suitFacts.lastUpdated !== installedFacts.lastUpdated) {
+    const suitLabel = `${suitFacts.count} terms (${suitFacts.lastUpdated || 'no lastUpdated'})`;
+    return `suit codex has ${suitLabel}; node_modules/0xray has ${installedLabel}`;
+  }
+  return null;
+}
+
+function cadenceWarnings(houseFile, text, cwd, env, now) {
+  const warnings = [];
+  if (!hasCadence(text)) {
+    if (dirExists(watchersDir(houseFile))) {
+      warnings.push('HOUSE.md has no Cadence section; grok-bot house init --migrate');
+    }
+    return warnings;
+  }
+  for (const name of WATCHER_LOGS) {
+    const warning = staleLogWarning(houseFile, name, now);
+    if (warning) warnings.push(warning);
+  }
+  const activity = activityWarning(activityLogFile(cwd, houseFile, env));
+  if (activity) warnings.push(activity);
+  const codex = codexWarning(cwd, houseFile);
+  if (codex) warnings.push(codex);
+  return warnings;
+}
+
+function inspectHouseFile(file, via, ctx = {}) {
+  const cwd = ctx.cwd || path.dirname(file);
+  const env = ctx.env || {};
+  const now = typeof ctx.now === 'number' ? ctx.now : Date.now();
   let text = '';
   try {
     text = fs.readFileSync(file, 'utf8');
@@ -245,8 +412,10 @@ function inspectHouseFile(file, via) {
       file: null,
       via: null,
       detail: 'house is not enabled here',
+      warnings: [],
     };
   }
+  const warnings = cadenceWarnings(file, text, cwd, env, now);
   const exampleSibling = path.join(path.dirname(file), 'EXAMPLE.md');
   const scope = scopeFromHouseText(text);
   if (fs.existsSync(exampleSibling)) {
@@ -256,6 +425,7 @@ function inspectHouseFile(file, via) {
       via,
       detail: 'house/EXAMPLE.md exists — delete it',
       scope,
+      warnings,
     };
   }
   const unfilled = text.split(/\r?\n/).filter((line) => HOUSE_EXAMPLE_LINE.test(line));
@@ -267,9 +437,10 @@ function inspectHouseFile(file, via) {
       detail: 'HOUSE.md still has unfilled example lines',
       unfilled: unfilled.length,
       scope,
+      warnings,
     };
   }
-  return { status: 'pass', file, via, detail: file, scope };
+  return { status: 'pass', file, via, detail: file, scope, warnings };
 }
 
 function probeHouse(cwd, env) {
@@ -283,9 +454,10 @@ function probeHouse(cwd, env) {
         via: null,
         detail: 'house is not enabled here',
         missing: path.resolve(raw),
+        warnings: [],
       };
     }
-    return inspectHouseFile(file, 'GROK_BOT_HOUSE');
+    return inspectHouseFile(file, 'GROK_BOT_HOUSE', { cwd, env });
   }
   const walked = walkForHouse(cwd);
   if (!walked) {
@@ -294,9 +466,10 @@ function probeHouse(cwd, env) {
       file: null,
       via: null,
       detail: 'house is not enabled here',
+      warnings: [],
     };
   }
-  return inspectHouseFile(walked, 'walk-up');
+  return inspectHouseFile(walked, 'walk-up', { cwd, env });
 }
 
 function isFile(file) {
@@ -308,10 +481,62 @@ function isFile(file) {
 }
 
 function houseTemplateNames(srcDir) {
-  return fs.readdirSync(srcDir).filter((name) => {
-    if (name === 'EXAMPLE.md') return false;
-    return isFile(path.join(srcDir, name));
-  });
+  const names = [];
+  const walk = (dir, prefix) => {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      if (entry.name === 'EXAMPLE.md') continue;
+      const rel = prefix ? path.join(prefix, entry.name) : entry.name;
+      if (entry.isDirectory()) {
+        walk(path.join(dir, entry.name), rel);
+        continue;
+      }
+      if (entry.isFile()) names.push(rel);
+    }
+  };
+  walk(srcDir, '');
+  return names;
+}
+
+function copyMissingHouseFile(srcDir, destDir, name) {
+  const dest = path.join(destDir, name);
+  if (fs.existsSync(dest)) return { dest, copied: false };
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(path.join(srcDir, name), dest);
+  return { dest, copied: true };
+}
+
+const CADENCE_HEADING = /^## Cadence\s*$/m;
+const STALE_LOG_MS = 2 * 60 * 60 * 1000;
+const WATCHER_LOGS = ['review-sent.log', 'stall-sweep.log'];
+const ACTIVITY_KEYS = ['t_ct', 'kind', 'action', 'seat'];
+const STAMP_RE = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})/g;
+
+function templateCadenceBlock(srcDir) {
+  const file = path.join(srcDir, 'HOUSE.md');
+  if (!isFile(file)) return null;
+  const text = fs.readFileSync(file, 'utf8');
+  const match = text.match(/^## Cadence\r?\n[\s\S]*?(?=^## )/m);
+  if (!match) return null;
+  return `${match[0].replace(/\s+$/, '')}\n`;
+}
+
+function appendCadenceBlock(destHouse, block) {
+  if (!block || !isFile(destHouse)) return false;
+  const text = fs.readFileSync(destHouse, 'utf8');
+  if (CADENCE_HEADING.test(text)) return false;
+  const sep = text.endsWith('\n') ? '\n' : '\n\n';
+  fs.writeFileSync(destHouse, `${text}${sep}${block}`);
+  return true;
+}
+
+function startedFolderPhrase(copied, destDir, folder) {
+  const rels = copied
+    .map((file) => path.relative(destDir, file))
+    .filter((rel) => rel === folder || rel.startsWith(`${folder}${path.sep}`) || rel.startsWith(`${folder}/`));
+  if (rels.length === 0) return null;
+  return `started ${rels.join(', ')}`;
 }
 
 function legacyBoardPath(seatRoot) {
@@ -341,14 +566,16 @@ function initHouse(opts = {}) {
     };
   }
   fs.mkdirSync(destDir, { recursive: true });
+  const files = [];
   for (const name of names) {
-    fs.copyFileSync(path.join(srcDir, name), path.join(destDir, name));
+    const result = copyMissingHouseFile(srcDir, destDir, name);
+    if (result.copied) files.push(result.dest);
   }
   return {
     ok: true,
     code: 0,
     destDir,
-    files: names.map((name) => path.join(destDir, name)),
+    files,
     moved: null,
     message: `copied templates/house to ${destDir}`,
   };
@@ -384,21 +611,24 @@ function migrateHouse({ seatRoot, srcDir, destDir, names }) {
   const skipped = [];
   for (const name of names) {
     if (name === 'WAVEBOARD.md' && moved) continue;
-    const dest = path.join(destDir, name);
-    if (isFile(dest)) {
-      skipped.push(dest);
-      continue;
-    }
-    fs.copyFileSync(path.join(srcDir, name), dest);
-    copied.push(dest);
+    const result = copyMissingHouseFile(srcDir, destDir, name);
+    if (result.copied) copied.push(result.dest);
+    else skipped.push(result.dest);
   }
+  const destHouse = path.join(destDir, 'HOUSE.md');
+  const addedCadence = appendCadenceBlock(destHouse, templateCadenceBlock(srcDir));
   const attention = path.join(destDir, 'ATTENTION_STATE.md');
   const parts = [];
   if (moved) parts.push(`moved ${legacy} to ${destBoard}`);
   else parts.push('no ops/WAVEBOARD.md to move');
   if (copied.includes(attention)) parts.push(`started ${attention}`);
+  if (addedCadence) parts.push(`added Cadence section to ${destHouse}`);
+  const watchersPhrase = startedFolderPhrase(copied, destDir, 'watchers');
+  if (watchersPhrase) parts.push(watchersPhrase);
+  const fleetPhrase = startedFolderPhrase(copied, destDir, 'fleet');
+  if (fleetPhrase) parts.push(fleetPhrase);
   if (copied.length > 0) parts.push(`copied templates/house to ${destDir}`);
-  else if (!moved) parts.push(`left existing house files in ${destDir}`);
+  else if (!moved && !addedCadence) parts.push(`left existing house files in ${destDir}`);
   return {
     ok: true,
     code: 0,
@@ -551,6 +781,11 @@ function formatDoctor(report) {
     } else {
       lines.push(`House: ${label} — ${spoken}`);
     }
+    if (Array.isArray(report.house.warnings)) {
+      for (const warning of report.house.warnings) {
+        lines.push(`House: WARN — ${warning}`);
+      }
+    }
   }
   lines.push('');
   lines.push('Next');
@@ -626,9 +861,9 @@ function usageText(kitRoot) {
 
 Commands:
   doctor | ready   Prove mill+inspect. Say house on, or house is not enabled here. Fail if example lines remain
-  house init       Copy templates/house into ./house. Refuses if a target file exists
+  house init       Copy templates/house into ./house, including watchers/ and fleet/. Refuses if a target file exists. Writes a file only when it is missing
   house init --migrate
-                   Move ops/WAVEBOARD.md to house/WAVEBOARD.md when that old board is a file. Start ATTENTION_STATE.md from the template when it is missing. Leave a house file you already changed. Refuse when both boards exist and the house board is not the untouched template
+                   Move ops/WAVEBOARD.md to house/WAVEBOARD.md when that old board is a file. Start ATTENTION_STATE.md from the template when it is missing. Append the template ## Cadence block when HOUSE.md has none. Start missing watchers/ and fleet/ files. Never overwrite a ledger or any other house file you already changed. Refuse when both boards exist and the house board is not the untouched template
   (default)        Point at AGENTS.md / SKILLS.md / llms.txt
 
 Flags:
