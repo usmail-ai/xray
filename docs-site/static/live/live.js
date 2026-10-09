@@ -318,13 +318,16 @@
     }
     var added = events.filter(function (e) { return !before[e.id]; }).map(function (e) { return e.id; });
     var gen = feed && feed.generated_at ? parseT(feed.generated_at) : NaN;
+    var wave = state.waveboard || null;
+    if (feed && own(feed, 'waveboard') !== undefined) wave = feed.waveboard;
     var next = {
       events: events,
       live: state.live,
       t: state.live ? nowMs : state.t,
       generatedAt: !isNaN(gen) && !(gen < (state.generatedAt || 0)) ? gen : state.generatedAt,
       working: feed && own(feed, 'working') !== undefined ? feed.working : (state.working || null),
-      cursor: (feed && feed.cursor) || state.cursor || null
+      cursor: (feed && feed.cursor) || state.cursor || null,
+      waveboard: wave
     };
     return { state: next, added: added };
   }

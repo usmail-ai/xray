@@ -274,9 +274,12 @@ def pr_events(gh: GitHub, repo: str, pr: dict, since: datetime) -> list[dict]:
     head = pr.get("head") or {}
     base = (pr.get("base") or {}).get("ref")
     labels = [lb.get("name") for lb in (pr.get("labels") or []) if isinstance(lb, dict) and lb.get("name")]
+    packet = _burst_cards().parse_packet(pr.get("body") or "")
 
     def add(event: dict, **more):
         hints = {"sha": head.get("sha"), "base": base, "title": title, "labels": labels}
+        if packet:
+            hints["packet"] = packet
         hints.update(more)
         kept = {key: val for key, val in hints.items() if val not in (None, "", [])}
         if kept:
@@ -413,7 +416,11 @@ def issue_events(gh: GitHub, repo: str, since: datetime) -> list[dict]:
         if created >= since:
             opened = ev(f"{repo}!{n}:open", i["created_at"], who, "GitHub", "issue_open",
                         f"{tag} opened · {i['title']}", i["html_url"], repo, n)
-            opened["_inbox"] = {"title": i.get("title") or "", "labels": labels, "text": i.get("body") or ""}
+            hints = {"title": i.get("title") or "", "labels": labels, "text": i.get("body") or ""}
+            packet = _burst_cards().parse_packet(i.get("body") or "")
+            if packet:
+                hints["packet"] = packet
+            opened["_inbox"] = hints
             out.append(opened)
         if i.get("closed_at") and datetime.fromisoformat(i["closed_at"].replace("Z", "+00:00")) >= since:
             out.append(ev(f"{repo}!{n}:closed", i["closed_at"], who, "GitHub", "issue_close",
@@ -796,6 +803,19 @@ def merge(events: list[dict]) -> list[dict]:
     return sorted(best.values(), key=order_key)
 
 
+def _burst_cards():
+    name = "burst_cards"
+    if name in sys.modules:
+        return sys.modules[name]
+    path = Path(__file__).resolve().parents[1] / "burst" / "cards.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def _burst_inbox():
     name = "burst_inbox"
     if name in sys.modules:
@@ -1107,6 +1127,10 @@ def write(feed: dict, out: Path) -> int:
         routed.maybe_waveboard(len(new), log=log)
     except Exception as exc:
         log(f"inbox route skipped ({type(exc).__name__})")
+    try:
+        _burst_cards().publish(feed, out.parent, log=log)
+    except Exception as exc:
+        log(f"waveboard skipped ({type(exc).__name__})")
     finally:
         _scrub_private(feed)
     tmp = out.with_suffix(".json.tmp")

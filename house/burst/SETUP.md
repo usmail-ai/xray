@@ -44,6 +44,7 @@ Files in this tree:
 | [PLAYBOOK.md](PLAYBOOK.md) | Every watcher, active vs working, LIVE vs behind, fixes log |
 | [activity.schema.json](activity.schema.json) | Line an agent submits |
 | [inbox.schema.json](inbox.schema.json) | One routed line in `fleet/inbox/<seat>.jsonl` |
+| [card.schema.json](card.schema.json) | One waveboard card: title, url, owner, stage, state, packet, beats |
 | [inbox-roles.json](inbox-roles.json) | Which events each seat's inbox receives |
 | [prompts.schema.json](prompts.schema.json) | `prompts.jsonl` line |
 | [cloud-agent.schema.json](cloud-agent.schema.json) | `cloud-agents.jsonl` line |
@@ -361,7 +362,26 @@ A watcher reads its own file first and records the last id. It keeps its current
 
 Only ARCH1 is uploaded. `push-inbox.mjs` posts new lines from `arch1.jsonl` to `BURST_INBOX_URL`. `GET /inbox/arch1?since=<id>` requires the arch1 GitHub App installation token, the same check as `POST /activity` (bot `arch10x1[bot]`). Other seats are not exposed.
 
-When a pass has new events, the loop runs the waveboard builder if it is configured. `BURST_WAVEBOARD` is the script path. When unset, the USMail path `/workspace/0xray-fleet/house/watchers/build_waveboard.py` is used if that file exists. The run is debounced to once a minute, in a subprocess with a timeout, and it receives only `GITHUB_READ_TOKEN`. Set `BURST_WAVEBOARD=off` to skip it. A failure does not stop the feed.
+When a pass has new events, the loop runs the optional waveboard builder if it is configured. `BURST_WAVEBOARD` is the script path. When unset, the USMail path `/workspace/0xray-fleet/house/watchers/build_waveboard.py` is used if that file exists. The run is debounced to once a minute, in a subprocess with a timeout, and it receives only `GITHUB_READ_TOKEN`. Set `BURST_WAVEBOARD=off` to skip it. A failure does not stop the feed.
+
+### Live waveboard
+
+The Spectrum page (`docs-site/static/live/index.html`) shows the board on the left two thirds and the packet panel on the right third. Under 720px the panel is a toggle. The page uses the feed it already loads. It does not start another poll and it does not call GitHub for card bodies.
+
+During the same pass, a `## Packet` block or a single line on an issue or pull request body that the collector already fetched is stored as the seven fields (200 characters, GitHub links only). Seat inbox lines for that `repo#number` count too. The pass writes `waveboard` onto the feed and rewrites `WAVEBOARD.md` at most once a minute (`BURST_WAVEBOARD_MD`). `waveboard-static.md` (`BURST_WAVEBOARD_STATIC`) stays as pinned cards. A live card with no beat for 60 minutes is marked stall and one line is appended to the coordinator inbox (`BURST_COORDINATOR`, default `coordinator`). Closed cards drop off after 24 hours. The card shape is [card.schema.json](card.schema.json).
+
+```
+## Packet
+- goal:
+- constraints:
+- path:
+- acceptance:
+- evidence:
+- next owner:
+- escalate:
+```
+
+One line: `goal: … · constraints: … · path: … · acceptance: … · evidence: … · next owner: … · escalate: …`
 
 Routine prompt:
 
