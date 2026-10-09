@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "house/burst/prompts.schema.json",
+  "title": "Burst prompts.jsonl line",
+  "description": "One JSON object per line in prompts.jsonl (default fleet/prompts.jsonl, env BURST_PROMPTS). Same fields as activity.schema.json with kind prompt. A pulse is action sent: the seat stays working for 10 minutes. No prompt body, no message text. The collector also reads legacy {t_ct, from, to} lines; see $defs.legacyPrompt.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["t_ct", "seat", "kind", "action"],
+  "properties": {
+    "t_ct": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?[+-]\\d{2}:\\d{2}$"
+    },
+    "seat": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "description": "Seat id or a display name. Display names resolve through seats config aliases."
+    },
+    "kind": { "const": "prompt" },
+    "action": { "enum": ["start", "end", "sent"] },
+    "to": { "type": "string", "maxLength": 40, "pattern": "^[A-Za-z0-9 ._:@#+/\\-]{1,40}$" },
+    "agent": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{2,40}$" },
+    "tag": { "type": "string", "maxLength": 80, "pattern": "^[A-Za-z0-9 ._:@#+/\\-]{1,80}$" }
+  },
+  "$defs": {
+    "legacyPrompt": {
+      "description": "Legacy prompt line. Read only: the collector maps `to` to the seat and treats the line as a SENT pulse. New lines use the top-level shape. POST /activity does not take this shape.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["t_ct", "from", "to"],
+      "properties": {
+        "t_ct": { "type": "string" },
+        "from": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "to": { "type": "string", "minLength": 1, "maxLength": 80, "description": "Seat that got the prompt. Seat id or display name resolved through aliases." }
+      },
+      "examples": [
+        { "t_ct": "2026-10-08T14:42:00-05:00", "from": "Blaze", "to": "Operator" }
+      ]
+    }
+  },
+  "examples": [
+    { "t_ct": "2026-10-09T08:59:30-05:00", "seat": "builder", "kind": "prompt", "action": "sent" },
+    { "t_ct": "2026-10-09T09:00:00-05:00", "seat": "builder", "kind": "prompt", "action": "start", "tag": "issue-1" },
+    { "t_ct": "2026-10-09T09:04:55-05:00", "seat": "builder", "kind": "prompt", "action": "end", "tag": "issue-1" }
+  ]
+}

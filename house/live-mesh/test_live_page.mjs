@@ -271,7 +271,7 @@ test('check 3: no packets or dots without real traffic; faint idle wire flow all
     assert.equal(L.wireGlow(t, 0.3, true), frozen.glow);
   }
   const page = readFileSync(path.join(liveDir, 'index.html'), 'utf8');
-  assert.match(page, /\.pill \{ display: inline-block; width: 11ch; text-align: center; white-space: nowrap;/, 'LIVE/REWOUND pill fixed width, no wrap');
+  assert.match(page, /\.pill \{ display: inline-block; width: 16ch; text-align: center; white-space: nowrap;/, 'freshness pill fits behind N min');
   assert.notEqual(L.wireGlow(1000, 0, false), L.wireGlow(1500, 0, false), 'idle glow travels');
   assert.ok(L.wireGlow(1e9, 0.5, false) >= 0 && L.wireGlow(1e9, 0.5, false) < 1);
   assert.equal(L.wireGlow(1000, 0, true), null, 'glow stops under reduced motion');
@@ -344,4 +344,70 @@ test('push and feed_push ride from the seat to GitHub with their own words', () 
   assert.deepEqual([...L.eventColor({ kind: 'push', from: 'forge' })], [...L.COLOR.forge]);
   assert.deepEqual([...L.eventColor({ kind: 'feed_push', from: 'mill' })], [88, 210, 180]);
   assert.equal(L.headline({ repo: '0xRayAI/xray', kind: 'feed_push' }), 'xray \u00b7 live-wire push');
+});
+
+test('the pill is feed freshness and working is not in the fleet count', () => {
+  const now = Date.parse('2026-10-09T15:00:00Z');
+  assert.equal(L.freshnessLabel(now - 90_000, now), 'LIVE');
+  assert.equal(L.freshnessLabel(now - 90_001, now), 'behind 2 min');
+  assert.equal(L.freshnessLabel(now - 30_000, now), 'LIVE');
+  assert.equal(L.BURST_POLL_MS, 10000);
+  const hot = { forge: 1 };
+  assert.equal(L.fleetLine(hot), 'Fleet: 1 live / 6 idle');
+  const until = new Date(now + 60_000).toISOString();
+  const working = L.seatWorking({ mill: until, forge: new Date(now - 1000).toISOString() }, now);
+  assert.equal(working.mill, 1);
+  assert.equal(working.forge, undefined);
+  assert.equal(L.fleetLine(hot), 'Fleet: 1 live / 6 idle', 'a working seat is not added to N of M');
+});
+
+test('a cursor poll treats 304 as unchanged and 409 as a full refetch', async () => {
+  const mem = { cursor: 'epoch.1' };
+  const calls = [];
+  const fetchFn = async (url) => {
+    calls.push(url);
+    if (calls.length === 1) return { status: 304, ok: false };
+    return { status: 200, ok: true, json: async () => ({ cursor: 'epoch.2', events: [] }) };
+  };
+  let r = await L.burstPoll(fetchFn, 0, mem);
+  assert.equal(r.status, 304);
+  assert.equal(r.feed, null);
+  assert.match(calls[0], /since=epoch\.1/);
+  mem.cursor = 'epoch.1';
+  const resync = [];
+  const fetch409 = async (url) => {
+    resync.push(url);
+    if (resync.length === 1) return { status: 409, ok: false, json: async () => ({ cursor: 'epoch.9' }) };
+    return { status: 200, ok: true, json: async () => ({ cursor: 'epoch.9', events: [{ id: 'a', t_ct: '2026-10-09T15:00:00Z' }] }) };
+  };
+  r = await L.burstPoll(fetch409, 1_000, mem);
+  assert.equal(r.feed.cursor, 'epoch.9');
+  assert.equal(mem.cursor, 'epoch.9');
+  assert.ok(!resync[1].includes('since='));
+});
+
+test('the header dot blinks in the seat color and the chip gains no extra word', () => {
+  const html = readFileSync(path.join(liveDir, 'index.html'), 'utf8');
+  assert.match(html, /dot\.classList\.toggle\('blink', seatState === 'working'/);
+  assert.match(html, /\.dot\.blink \{ animation: blink/);
+  assert.match(html, /prefers-reduced-motion: reduce\) \{[\s\S]*\.dot\.blink \{ animation: none/);
+  assert.equal(html.includes('⚙'), false);
+  assert.match(html, /s\.role \+ ' · ' \+ seatState/);
+});
+
+test('chip, dot, and node label share one seat state', () => {
+  assert.equal(L.seatState(true, true), 'working');
+  assert.equal(L.seatState(false, true), 'working');
+  assert.equal(L.seatState(true, false), 'active');
+  assert.equal(L.seatState(false, false), 'idle');
+  const html = readFileSync(path.join(liveDir, 'index.html'), 'utf8');
+  const calls = html.match(/L\.seatState\(/g) || [];
+  assert.equal(calls.length, 2);
+  assert.match(html, /drawNode\(key, seatState/);
+  assert.match(html, /sub = seatState/);
+  assert.equal(html.includes("on ? 'LIVE' : 'IDLE'"), false);
+  assert.equal(html.includes('IDLE'), false);
+  const js = readFileSync(path.join(liveDir, 'live.js'), 'utf8');
+  assert.equal(js.includes('missing_activity'), false);
+  assert.equal(html.includes('missing_activity'), false);
 });
