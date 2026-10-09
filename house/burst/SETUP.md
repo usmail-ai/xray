@@ -333,7 +333,7 @@ Install these on the builder laptop. They are local. They are not the host colle
 
 ### Repo watcher
 
-Every 30 seconds, poll the seat's repos and write a heartbeat (a timestamp). The loop records ids and times. It does not record command lines, environment, file names, or file contents.
+Every 30 seconds, poll the seat's repos and write a heartbeat (a timestamp). The loop records ids and times. It does not record command lines, environment, file names, or file contents. That file is a local heartbeat. It is not an activity line, and it does not light working.
 
 ```bash
 while true; do
@@ -343,6 +343,35 @@ while true; do
 done
 ```
 
+### Watchers: log only real work
+
+A watcher is a scheduled check, for example every 10 minutes. Each run looks first, and it does not write while it looks.
+
+Live work is any of these:
+
+- a cloud agent or subagent still running, including a desktop or browser run (`computerUse`)
+- a pull request or queue item this seat owns that is waiting on CI or a verdict
+- a prompt that has not been answered
+
+If none of those are true, write nothing. If this seat's last watcher line is an open `start` (no later `end` with the same tag), write one `action` `end` and stop. An idle tick must not pulse. That pulse is a false working light.
+
+If there is work, write a watcher start, do the check, then write the matching end. The same seat also logs `kind` `turn` at the start and end of each user turn, and `kind` `subagent` at the start and end of every subagent, including a desktop or browser (`computerUse`) run.
+
+Routine prompt:
+
+```
+Every 10 minutes, before you write anything, check whether this seat has live work: a running cloud agent or subagent (including a desktop or browser computerUse run), an owned pull request or queue item waiting on CI or a verdict, or an unanswered prompt. If there is none, write nothing, except one watcher end if your last watcher line is an open start. If there is work, write a watcher start, do the check, then write the matching end. Never write a line just because the timer fired. Also log kind turn start and end for each user turn, and kind subagent start and end for every subagent, including computerUse.
+```
+
+Two lines when that check finds work:
+
+```json
+{"t_ct":"2026-10-09T09:02:00-05:00","seat":"builder","kind":"watcher","action":"start","tag":"repos"}
+{"t_ct":"2026-10-09T09:02:30-05:00","seat":"builder","kind":"watcher","action":"end","tag":"repos"}
+```
+
+The shape is [activity.schema.json](activity.schema.json). The same rule is in [PLAYBOOK.md](PLAYBOOK.md).
+
 ### Activity
 
 House rule: every seat logs background work. Append one line to `fleet/activity.jsonl` when the work starts, and one line when it ends. `POST /activity` takes that same object and an installation token. There is no static key.
@@ -351,7 +380,7 @@ House rule: every seat logs background work. Append one line to `fleet/activity.
 
 The line is `t_ct` (ISO-8601 with a numeric offset), `kind` (`subagent`, `turn`, or `watcher`), `action` (`start` or `end`), and `tag` (at most 80 characters), plus `seat` on the file. Names and times only. A seat is working while a start has no later end for the same seat, kind, and tag, for at most 60 minutes. A `SENT` line in `prompts.jsonl` also keeps that seat working for 10 minutes. Display names resolve through `aliases` in the seats config (`Chief of Staff` → `CoS`, `Lab Tester: Chaos` → `Chaos`). The feed lists `fleet.missing_activity`: seats pulsed in the last 60 minutes with no activity line in that window. The page does not read that list. The light is not in N of M. The shape is [activity.schema.json](activity.schema.json).
 
-Off-box seats POST with their own App token. One post at start, one at end. The window stays open until `end`. Do not post on a 30-second tick.
+Off-box seats POST with their own App token. One post at the start of a turn, a subagent, or a watcher that found work, and one post at the matching end. Do not post a watcher line on a tick that found no live work. A lone open start still expires after 60 minutes.
 
 ```bash
 curl -sS -o /dev/null -w '%{http_code}\n' \
@@ -402,7 +431,7 @@ No other fields. No free text.
 | `retest` | `start`, `end`, `pass`, `fail` |
 | `deploy` | `start`, `end`, `pass`, `fail`, `cancel` |
 
-Examples, one per kind, are the `examples` array in `activity.schema.json`. Older stored lines may still use `received`, `sent`, or `tick`. New lines use the table.
+The `examples` array in `activity.schema.json` is the accepted shape. Turn, subagent, and watcher include a start and the matching end. Older stored lines may still use `received`, `sent`, or `tick`. New lines use the table.
 
 `prompts.jsonl` is prompt lines. `cloud-agents.jsonl` is cloud-agent lines, each with `agent`. One JSON object per line.
 
@@ -467,5 +496,6 @@ Work top to bottom. Stop at the first failure.
 | Activity 403 `seat mismatch` | The body's `seat` does not match the token's seat. Drop `seat` or send the token's seat. A static key is not accepted |
 | A seat that just sent a prompt looks idle | `fleet/prompts.jsonl` (or `BURST_PROMPTS`) needs `action` `sent` (or a legacy `{from,to}` line) and a seat the aliases table knows. The light lasts 10 minutes. Fixes log item 13 |
 | `fleet.missing_activity` names a seat | That seat pulsed in the last 60 minutes and wrote no `activity.jsonl` line in that window |
+| A seat with no live work stays working | The watcher wrote a start on an idle tick. It must look first and write nothing, except one watcher `end` when the last watcher line is an open start. A lone open start expires after 60 minutes. Fixes log item 14 |
 
 The fixes log in [PLAYBOOK.md](PLAYBOOK.md) is the history of those rows. When a row and the log disagree, the log's current rule is the one the code implements.
