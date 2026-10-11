@@ -35,10 +35,10 @@ Ops nouns — clocks, tickets, roles, decks. Not products.
 
 | Term | Plain gloss |
 |------|-------------|
-| **beat** | Timed sync for work (hour / Day-N dist / wave tick). Clocks the loop — not the work itself |
+| **beat** | One real event on a card: pull request opened or pushed, review verdict, CI result, merge, merge-queue tick, owner message, or blocker. A watcher run whose start and end fall in the same second is not a beat |
 | **wave** | Stretch of beats toward one outcome (ship, dist week, proof) |
-| **board** | Where open work is visible (`WAVEBOARD`). Cards + status |
-| **card** | One ticket assigned to a **seat**. Done when there’s a receipt (or honest FAIL) |
+| **board** | Where open work is visible (`WAVEBOARD`). Cards grouped by stage |
+| **card** | One GitHub issue or pull request (`repo#number`): title, url, owner seat, stage (`open` > `review` > `fix` > `merge` > `retest` > `done`), state (`live`, `parked`, or `closed`) |
 | **seat** | Named bot role (CoS, forge, critic, herald, magnet…) |
 | **station** | CoS primary work deck — durable intent, live track, next beat (survives compact) |
 | **receipt** | Proof a card closed (critic PASS, `npm view`, Dist URL). Chat LGTM ≠ receipt |
@@ -71,7 +71,7 @@ How we act — not a product, not a ticket type.
 | suit ≠ 0xRay | kit ≠ whole power plant |
 | mill ≠ plant (verb) | mill = product organ; plant = fasten act (or colloquial floor) |
 | dist ≠ product | lane/workstream for announcing products |
-| beat ≠ card | clock ≠ ticket |
+| beat ≠ card | a real event on a card ≠ the card |
 | station ≠ board | CoS deck ≠ full WAVEBOARD |
 | card ≠ receipt | assign ≠ proof |
 | group ≠ Station | chat bus ≠ durable deck |
@@ -81,7 +81,7 @@ How we act — not a product, not a ticket type.
 | wear ≠ plant (verb) | wear = run suited; plant = fasten the suit/organs onto a project |
 | wear ≠ costume | files on disk without live hooks/inspect = theater |
 | chime ≠ reflexive ack | needed interrupt / soft override — not Cadence HARD refuse-all |
-| packet ≠ ack | pass-along/sync unit ≠ reflexive chime |
+| packet ≠ ack | seven fields on a card ≠ a reflexive chime |
 | EXECUTE ≠ draft | armed ship ≠ proposed copy |
 | EXECUTE ≠ packet | armed Dist/action ≠ the handoff object |
 
@@ -110,7 +110,7 @@ Locked 2026-09-14 with Blaze — categorized.
 ## Lexicon add (2026-10-05 — inter-bot)
 | Term | Bucket | Plain |
 |------|--------|-------|
-| **packet** | Workstream | The **pass-along / sync** unit between seats. One word for the handoff object: locked scope, exact copy, gates, Done·Verify·Next. CoS/owner writes; owning seat runs. Not a chat ack. Pass-along and sync name the same act — they are not peer terms beside packet. |
+| **packet** | Workstream | A card's seven fields: goal, constraints, path, acceptance, evidence, next owner, escalate. From a `## Packet` block or one line. Missing acceptance or next owner makes the card amber (`no packet`). Evidence fills from the latest beat. |
 | **EXECUTE** | Practices | Armed Dist/action order with exact copy + gates; herald/seat ships only on EXECUTE (not draft/FYI). Distinct from a packet (the packet may *carry* an EXECUTE). |
 | **handoff** | Workstream | The channel or file that *carries* a packet (`ops/handoffs/…` or a seat message). The packet is the content; the handoff is the pipe. |
 
@@ -121,3 +121,10 @@ Locked 2026-09-14 with Blaze — categorized.
 | **workstream** | Workstream | Card/seat lane on the board (how work runs). ≠ product SKU. ≠ planes. |
 
 Don't confuse: watcher ≠ Dist; workstream ≠ product; workstream ≠ planes.
+
+## Lexicon add (2026-10-09 — waveboard)
+| Term | Bucket | Plain |
+|------|--------|-------|
+| **card** | Workstream | One GitHub issue or pull request (`repo#number`). Title, url, owner seat, stage (`open` > `review` > `fix` > `merge` > `retest` > `done`), state (`live`, `parked`, or `closed`). |
+| **packet** | Workstream | That card's seven fields. Cap 200 characters. Allowlisted links. Amber `no packet` badge when acceptance or next owner is missing. |
+| **beat** | Workstream | One real event: opened or pushed, review verdict, CI, merge, merge-queue tick, owner message, or blocker. A watcher whose start and end fall in the same second is never a beat. |

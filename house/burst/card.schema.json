@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "house/burst/card.schema.json",
+  "title": "Burst waveboard card",
+  "description": "One GitHub issue or pull request on the live waveboard. Built from the feed events and the seat inboxes during the feed pass. No bodies, prompt text, or secrets. The page reads this object from the feed it already polls.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "title", "url", "owner", "stage", "state", "amber", "badge", "stall", "pinned", "age_s", "packet", "beats"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[^\\s]+/[^\\s]+#\\d+$" },
+    "title": { "type": "string", "maxLength": 120 },
+    "url": { "type": "string", "maxLength": 300 },
+    "owner": { "type": "string", "maxLength": 40 },
+    "stage": { "type": "string", "enum": ["open", "review", "fix", "merge", "retest", "done"] },
+    "state": { "type": "string", "enum": ["live", "parked", "closed"] },
+    "amber": { "type": "boolean" },
+    "badge": { "type": "string", "enum": ["packet", "no packet"] },
+    "stall": { "type": "boolean" },
+    "pinned": { "type": "boolean" },
+    "age_s": { "type": "integer", "minimum": 0 },
+    "packet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["goal", "constraints", "path", "acceptance", "evidence", "next_owner", "escalate"],
+      "properties": {
+        "goal": { "type": "string", "maxLength": 200 },
+        "constraints": { "type": "string", "maxLength": 200 },
+        "path": { "type": "string", "maxLength": 200 },
+        "acceptance": { "type": "string", "maxLength": 200 },
+        "evidence": { "type": "string", "maxLength": 200 },
+        "next_owner": { "type": "string", "maxLength": 200 },
+        "escalate": { "type": "string", "maxLength": 200 }
+      }
+    },
+    "beats": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "t_ct", "type", "label"],
+        "properties": {
+          "id": { "type": "string" },
+          "t_ct": { "type": "string" },
+          "type": { "type": "string", "enum": ["opened", "pushed", "review", "ci", "merge", "merge_queue", "owner", "blocker", "retest"] },
+          "label": { "type": "string", "maxLength": 80 }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "id": "org/repo#1",
+      "title": "org/repo #1 opened",
+      "url": "https://github.com/org/repo/pull/1",
+      "owner": "builder",
+      "stage": "review",
+      "state": "live",
+      "amber": false,
+      "badge": "packet",
+      "stall": false,
+      "pinned": false,
+      "age_s": 300,
+      "packet": {
+        "goal": "Ship the gate",
+        "constraints": "Read-only GitHub",
+        "path": "house/burst",
+        "acceptance": "Tests pass",
+        "evidence": "review pass",
+        "next_owner": "reviewer",
+        "escalate": "coordinator"
+      },
+      "beats": [
+        {
+          "id": "org/repo#1:review:1",
+          "t_ct": "2026-10-09T09:05:00-05:00",
+          "type": "review",
+          "label": "review pass"
+        }
+      ]
+    }
+  ]
+}
