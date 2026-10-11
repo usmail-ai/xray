@@ -159,3 +159,78 @@ export async function postActivity({ body, token, seats, lines, fetchFn, now = D
   if (!out.ok) return { status: out.status || 400, error: out.error };
   return { status: 204, seq: out.seq };
 }
+
+export const MIRROR_SEAT = 'arch1';
+const INBOX_KEYS = new Set(['id', 't_ct', 'seat', 'type', 'repo', 'number', 'sha', 'title', 'url', 'reason']);
+
+function secretOk(got, secret) {
+  if (typeof got !== 'string' || typeof secret !== 'string' || !got || !secret) return false;
+  const left = createHash('sha256').update(got).digest();
+  const right = createHash('sha256').update(secret).digest();
+  return left.equals(right);
+}
+
+export function validInboxLine(d, mirrorSeat = MIRROR_SEAT) {
+  if (!d || typeof d !== 'object' || Array.isArray(d)) return false;
+  for (const key of Object.keys(d)) {
+    if (!INBOX_KEYS.has(key) || ACT_BANNED.test(key)) return false;
+  }
+  for (const key of ['id', 't_ct', 'seat', 'type', 'repo', 'title', 'url', 'reason']) {
+    if (typeof d[key] !== 'string' || !d[key] && key !== 'repo' && key !== 'url' && key !== 'title') return false;
+  }
+  if (typeof d.number !== 'number' || !Number.isInteger(d.number)) return false;
+  if (d.sha != null && typeof d.sha !== 'string') return false;
+  if (d.seat.toLowerCase() !== String(mirrorSeat).toLowerCase()) return false;
+  if (ACT_BANNED.test(JSON.stringify(d))) return false;
+  return true;
+}
+
+export function linesAfter(lines, since) {
+  const list = Array.isArray(lines) ? lines.filter(Boolean) : [];
+  if (!since) return list.slice();
+  const at = list.findIndex((line) => line.id === since);
+  if (at < 0) return list.slice();
+  return list.slice(at + 1);
+}
+
+export function postInbox({ secret, headerSecret, body, lines, mirrorSeat = MIRROR_SEAT }) {
+  if (!secretOk(headerSecret, secret)) return { status: 401, error: 'unauthorized' };
+  let parsed;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return { status: 400, error: 'not json' };
+  }
+  const incoming = parsed && Array.isArray(parsed.lines) ? parsed.lines : null;
+  if (!incoming) return { status: 400, error: 'lines required' };
+  if (incoming.some((line) => !line || String(line.seat || '').toLowerCase() !== String(mirrorSeat).toLowerCase())) {
+    return { status: 403, error: 'inbox is not exposed' };
+  }
+  const known = new Set(lines.map((line) => line && line.id));
+  let added = 0;
+  for (const line of incoming) {
+    if (!validInboxLine(line, mirrorSeat)) return { status: 400, error: 'bad inbox line' };
+    if (known.has(line.id)) continue;
+    known.add(line.id);
+    lines.push(line);
+    added += 1;
+  }
+  return { status: 200, added };
+}
+
+export async function getInbox({ token, seats, lines, since, fetchFn, now = Date.now(), api, mirrorSeat = MIRROR_SEAT }) {
+  if (!token) return { status: 401, error: 'unauthorized' };
+  const who = await verifyInstallationToken(token, seats, fetchFn, now, api);
+  if (!who.ok) return { status: who.status, error: who.error };
+  if (String(who.seat).toLowerCase() !== String(mirrorSeat).toLowerCase()) {
+    return { status: 403, error: 'inbox is not exposed' };
+  }
+  return { status: 200, lines: linesAfter(lines, since) };
+}
+
+export async function inboxRequest({ method, pathname, since, token, secret, headerSecret, body, seats, lines, fetchFn, now, api }) {
+  if (pathname !== '/inbox/arch1') return { status: 404, error: 'not found' };
+  if (method === 'GET') return getInbox({ token, seats, lines, since, fetchFn, now, api });
+  if (method === 'POST') return postInbox({ secret, headerSecret, body, lines });
+  return { status: 405, error: 'method not allowed' };
+}

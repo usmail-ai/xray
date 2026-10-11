@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "house/burst/inbox.schema.json",
+  "title": "Burst seat inbox line",
+  "description": "One routed feed event in fleet/inbox/<seat>.jsonl. No bodies, prompt text, or secrets. sha is optional. The feed loop writes the line. Only the arch1 file is mirrored to GET /inbox/arch1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "t_ct", "seat", "type", "repo", "number", "title", "url", "reason"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "t_ct": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "seat": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,40}$" },
+    "type": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,40}$" },
+    "repo": { "type": "string", "maxLength": 120 },
+    "number": { "type": "integer", "minimum": 0 },
+    "sha": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+    "title": { "type": "string", "maxLength": 120 },
+    "url": { "type": "string", "maxLength": 300 },
+    "reason": { "type": "string", "minLength": 1, "maxLength": 80 }
+  },
+  "examples": [
+    {
+      "id": "org/repo#1:open",
+      "t_ct": "2026-10-09T09:00:00-05:00",
+      "seat": "critic",
+      "type": "pr_open",
+      "repo": "org/repo",
+      "number": 1,
+      "sha": "0123456789abcdef0123456789abcdef01234567",
+      "title": "org/repo #1 opened",
+      "url": "https://github.com/org/repo/pull/1",
+      "reason": "new or updated pr"
+    },
+    {
+      "id": "ready:org/repo#1:0123456789abcdef0123456789abcdef01234567",
+      "t_ct": "2026-10-09T09:05:00-05:00",
+      "seat": "arch1",
+      "type": "ready",
+      "repo": "org/repo",
+      "number": 1,
+      "sha": "0123456789abcdef0123456789abcdef01234567",
+      "title": "org/repo #1",
+      "url": "https://github.com/org/repo/pull/1",
+      "reason": "critic pass and green ci"
+    }
+  ]
+}
