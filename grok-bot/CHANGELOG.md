@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.1.10
+
+- House template `## Cadence` (optional; delete it when the house has no code loop) and starter files: `watchers/merge-queue.md`, `watchers/review-sent.log`, `watchers/stall-sweep.log`, `watchers/issue-sweep-last.txt`, `watchers/waveboard-static.md`, `fleet/activity.jsonl`, and `fleet/prompts.jsonl`. The cadence doc link stays absolute: https://github.com/0xRayAI/xray/blob/main/docs/opproc-cadence.md
+- `house init` copies template subfolders. It still refuses when a target file already exists. The copy writes a file only when that file is missing.
+- `house init --migrate` appends the template Cadence block when `HOUSE.md` has no `## Cadence` heading, starts missing `watchers/` and `fleet/` files, and never overwrites an existing ledger.
+- `grok-bot doctor` warns, and does not fail the plant, when a Cadence section is present and `review-sent.log` or `stall-sweep.log` is missing or older than 2 hours, when the activity log's last line is not JSON with `t_ct`, `kind`, `action`, and `seat`, or when the suit `.xray/codex.json` term count or `lastUpdated` differs from `node_modules/0xray`. When `watchers/` exists and Cadence is missing, doctor hints `grok-bot house init --migrate`.
+- Live-mesh lines follow the #248 box reader: box lines carry `seat`, and prompt pulses are `{t_ct, seat, kind: "prompt", action: "sent"}`.
+- Lexicon and pack notes since the 0.1.9 publish: chime, packet, EXECUTE, handoff (#221), the pack OP-PROC new-seat gate (#224), and watcher and workstream (#225).
+
+## 0.1.9
 
 - `grok-bot house init --migrate` moves `ops/WAVEBOARD.md` to `house/WAVEBOARD.md` and starts `ATTENTION_STATE.md` when that file is missing. It leaves a house file you already changed, and refuses when both boards exist and the house board is not the untouched template. A HOUSE.md line that is exactly `wallet off` (or `Scope: wallet off`) skips Open Wallet, Clearing, and hangar pay steps in `grok-bot doctor`.
 - House template: every markdown file under `ops/` carries a one-line 0xRay house-example banner. `house init` also copies `AUTO-REVIEW.md` (blank Ask first and Allow; the only house file that enforces them) and optional `ROLE-MAP.md`. The Roster heading in `HOUSE.md` has no `(example)` line, so doctor still checks the six headings.
@@ -9,9 +18,6 @@
 - **Idle `/loop` stop** — when the card and the board are idle, unsubscribe and do not resubscribe. Not a heartbeat on parked work.
 - **Subject review. Fix n ship.** After PASS, review the subject, close leftovers, then ship. PASS is not ship.
 - groover-hangar is live. Outside sellers can deploy a shop on Base, but paid testing and catalog listing aren't open to them yet.
-
-## 0.1.9
-
 - Kit is not the fleet. Fleet house SSOT is repo-root `house/` in 0xRayAI/xray, not inside this package (#205).
 - Pack `OP-PROC.md` stays generic and does not name fleet seats. Your five principles live in your `house/OP-PROC.md` after init.
 - Pack check rejects a `grok-bot/house` tree so the fleet OP-PROC cannot ship in the kit.
