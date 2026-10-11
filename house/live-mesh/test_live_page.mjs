@@ -410,6 +410,7 @@ test('chip, dot, and node label share one seat state', () => {
   const js = readFileSync(path.join(liveDir, 'live.js'), 'utf8');
   assert.equal(js.includes('missing_activity'), false);
   assert.equal(html.includes('missing_activity'), false);
+});
 
 test('ambient replay loop: dimmed overlay every 10 s, visual only, toggle + ?spectrum=0 + reduced motion', () => {
   const html = readFileSync(path.join(liveDir, 'index.html'), 'utf8');
