@@ -160,7 +160,7 @@ export async function postActivity({ body, token, seats, lines, fetchFn, now = D
   return { status: 204, seq: out.seq };
 }
 
-export const MIRROR_SEAT = 'arch1';
+export const MIRROR_SEAT = 'maker';
 const INBOX_KEYS = new Set(['id', 't_ct', 'seat', 'type', 'repo', 'number', 'sha', 'title', 'url', 'reason']);
 
 function secretOk(got, secret) {
@@ -229,7 +229,7 @@ export async function getInbox({ token, seats, lines, since, fetchFn, now = Date
 }
 
 export async function inboxRequest({ method, pathname, since, token, secret, headerSecret, body, seats, lines, fetchFn, now, api }) {
-  if (pathname !== '/inbox/arch1') return { status: 404, error: 'not found' };
+  if (pathname !== '/inbox/maker') return { status: 404, error: 'not found' };
   if (method === 'GET') return getInbox({ token, seats, lines, since, fetchFn, now, api });
   if (method === 'POST') return postInbox({ secret, headerSecret, body, lines });
   return { status: 405, error: 'method not allowed' };

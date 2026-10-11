@@ -146,7 +146,7 @@ test('github 5xx is 503 and is not cached', async () => {
 });
 
 const archSeats = [
-  { seat: 'arch1', bot: 'arch10x1[bot]', botId: 42, org: 'example-org' },
+  { seat: 'maker', bot: 'maker-app[bot]', botId: 42, org: 'example-org' },
   { seat: 'builder', bot: 'builder-bot[bot]', botId: 1001, org: 'example-org' },
 ];
 
@@ -159,7 +159,7 @@ function fetchAs(login, id) {
   };
 }
 
-function inboxLine(id, seat = 'arch1') {
+function inboxLine(id, seat = 'maker') {
   return {
     id, t_ct: '2026-10-09T14:00:00Z', seat, type: 'ready', repo: 'org/repo', number: 1,
     sha: 'a'.repeat(40), title: 'ready', url: 'https://github.com/org/repo/pull/1',
@@ -167,7 +167,7 @@ function inboxLine(id, seat = 'arch1') {
   };
 }
 
-test('GET /inbox/arch1 requires the arch1 installation token and since returns later lines', async () => {
+test('GET /inbox/maker requires the maker installation token and since returns later lines', async () => {
   clearTokenCache();
   const lines = [];
   const secret = 'ingest-secret-example';
@@ -183,7 +183,7 @@ test('GET /inbox/arch1 requires the arch1 installation token and since returns l
   });
   assert.equal(again.added, 1);
   assert.deepEqual(lines.map((line) => line.id), ['ready-1', 'ready-2', 'ready-3']);
-  const missing = await getInbox({ token: '', seats: archSeats, lines, fetchFn: fetchAs('arch10x1[bot]', 42) });
+  const missing = await getInbox({ token: '', seats: archSeats, lines, fetchFn: fetchAs('maker-app[bot]', 42) });
   assert.equal(missing.status, 401);
   const other = await getInbox({
     token: liveToken('B'), seats: archSeats, lines, fetchFn: fetchAs('builder-bot[bot]', 1001), now,
@@ -191,13 +191,13 @@ test('GET /inbox/arch1 requires the arch1 installation token and since returns l
   assert.equal(other.status, 403);
   assert.equal(other.error, 'inbox is not exposed');
   const ok = await getInbox({
-    token: liveToken('C'), seats: archSeats, lines, since: 'ready-1', fetchFn: fetchAs('arch10x1[bot]', 42), now,
+    token: liveToken('C'), seats: archSeats, lines, since: 'ready-1', fetchFn: fetchAs('maker-app[bot]', 42), now,
   });
   assert.equal(ok.status, 200);
   assert.deepEqual(ok.lines.map((line) => line.id), ['ready-2', 'ready-3']);
   const hidden = await inboxRequest({
     method: 'GET', pathname: '/inbox/critic', token: liveToken('C'), seats: archSeats, lines,
-    fetchFn: fetchAs('arch10x1[bot]', 42), now,
+    fetchFn: fetchAs('maker-app[bot]', 42), now,
   });
   assert.equal(hidden.status, 404);
   const critic = await postInbox({

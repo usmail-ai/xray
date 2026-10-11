@@ -146,8 +146,8 @@ class PromptPulse(unittest.TestCase):
             # New format: seat, kind prompt, action sent.
             {"t_ct": iso_offset(now - 60), "seat": "Chief of Staff", "kind": "prompt", "action": "sent"},
             # Legacy format: {t_ct, from, to}. The seat in `to` is pulsed.
-            {"t_ct": iso_offset(now - 120), "from": "Blaze", "to": "Lab Tester: Chaos"},
-            {"t_ct": iso_offset(now - 90), "from": "Blaze", "to": "Operator"},
+            {"t_ct": iso_offset(now - 120), "from": "Lead", "to": "Lab Tester: Chaos"},
+            {"t_ct": iso_offset(now - 90), "from": "Lead", "to": "Operator"},
         ], aliases, now)
         self.assertEqual(set(pulses), {"CoS", "Chaos", "Operator"})
         self.assertAlmostEqual(pulses["Chaos"], now - 120)
@@ -161,8 +161,8 @@ class PromptPulse(unittest.TestCase):
             {"t_ct": iso_offset(now - 60), "seat": "builder", "kind": "prompt", "action": "start"},
             {"t_ct": iso_offset(now - 60), "seat": "builder", "kind": "turn", "action": "sent"},
             {"t_ct": iso_offset(now - 60), "to": "builder"},
-            {"t_ct": iso_offset(now - 60), "from": "Blaze", "to": "builder", "action": "start"},
-            {"t_ct": iso_offset(now - 60), "from": "Blaze", "to": "builder", "message": "no text"},
+            {"t_ct": iso_offset(now - 60), "from": "Lead", "to": "builder", "action": "start"},
+            {"t_ct": iso_offset(now - 60), "from": "Lead", "to": "builder", "message": "no text"},
         ], self.aliases(), now)
         self.assertEqual(pulses, {})
 

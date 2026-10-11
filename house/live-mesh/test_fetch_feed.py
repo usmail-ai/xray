@@ -584,7 +584,7 @@ class FailsafeFeed(unittest.TestCase):
         (root / "fleet").mkdir()
         when = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(now - 30))
         (root / "fleet" / "prompts.jsonl").write_text(
-            json.dumps({"t_ct": when, "from": "Blaze", "to": "Operator"}) + "\n"
+            json.dumps({"t_ct": when, "from": "Lead", "to": "Operator"}) + "\n"
             + json.dumps({"t_ct": when, "seat": "Chief of Staff", "kind": "prompt", "action": "sent"}) + "\n",
             encoding="utf-8")
         seats = root / "seats.json"
@@ -643,7 +643,7 @@ class InboxWrite(unittest.TestCase):
             "develop_branches": ["develop"], "watcher_seats": [],
             "seats": {
                 "critic": {"kinds": ["pr_open", "pr_update"]},
-                "arch1": {"ready": False},
+                "builder": {"ready": False},
                 "chaos": {"merge_bases": ["develop"]},
                 "operator": {"kinds": [], "labels": [], "needles": []},
                 "cos": {"stalls": False, "watcher_gaps": False, "labels": [], "needles": []},

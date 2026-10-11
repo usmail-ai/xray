@@ -1,13 +1,13 @@
-// Upload new arch1 inbox lines. Other seats stay on the box.
+// Upload new maker inbox lines. Other seats stay on the box.
 // The ingest secret stays in the X-Burst-Ingest header.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const HEADER = 'X-Burst-Ingest';
-const MIRROR = 'arch1';
+const MIRROR = 'maker';
 
-export function arch1Lines(text, sent) {
+export function makerLines(text, sent) {
   const out = [];
   const seen = sent instanceof Set ? sent : new Set(sent || []);
   for (const raw of String(text || '').split('\n')) {
@@ -72,7 +72,7 @@ async function main() {
   }
   const sentPath = join(dir, MIRROR + '.sent.json');
   const sent = readSent(sentPath);
-  const lines = arch1Lines(text, sent);
+  const lines = makerLines(text, sent);
   const result = await pushInbox({ fetchFn: globalThis.fetch, url, secret, lines });
   if (!result.ok) {
     process.stderr.write(`${result.error || 'inbox mirror failed'} (${result.status})\n`);

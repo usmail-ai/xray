@@ -17,7 +17,7 @@ OUT = Path(os.environ.get("LIVE_RAILWAY_FILE", RUN / "feed" / "railway-deploys.j
 TARGETS = [
     ("sunny-caring", "cb9d06a5-dfbf-4592-995c-0bf11169aae3", "sunny-caring", ("development", "labtest", "production")),
     ("tranquil-integrity", "3a70b105-b48b-4fec-a2ed-63dc83c92d9a", "mcp", ("development", "labtest", "production")),
-    ("live-board", "362432f1-f00b-4622-af49-b47572ba3a95", "live-mesh", ("production",)),
+    (os.environ.get("LIVE_RAILWAY_PROJECT", "live-board"), os.environ.get("LIVE_RAILWAY_PROJECT_ID", ""), os.environ.get("LIVE_RAILWAY_SERVICE", "live-mesh"), ("production",)),
 ]
 ALLOWED = ("deployment", "list")   # the only subcommand this script may run
 

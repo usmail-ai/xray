@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "house/burst/inbox.schema.json",
   "title": "Burst seat inbox line",
-  "description": "One routed feed event in fleet/inbox/<seat>.jsonl. No bodies, prompt text, or secrets. sha is optional. The feed loop writes the line. Only the arch1 file is mirrored to GET /inbox/arch1.",
+  "description": "One routed feed event in fleet/inbox/<seat>.jsonl. No bodies, prompt text, or secrets. sha is optional. The feed loop writes the line. Only the maker file is mirrored to GET /inbox/maker.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "t_ct", "seat", "type", "repo", "number", "title", "url", "reason"],
@@ -37,7 +37,7 @@
     {
       "id": "ready:org/repo#1:0123456789abcdef0123456789abcdef01234567",
       "t_ct": "2026-10-09T09:05:00-05:00",
-      "seat": "arch1",
+      "seat": "maker",
       "type": "ready",
       "repo": "org/repo",
       "number": 1,

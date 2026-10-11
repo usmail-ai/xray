@@ -12,7 +12,7 @@ import sys
 import time
 from pathlib import Path
 
-DEFAULT_SCRIPT = "/workspace/0xray-fleet/house/watchers/build_waveboard.py"
+DEFAULT_SCRIPT = "/srv/fleet-house/house/watchers/build_waveboard.py"
 DEBOUNCE_S = 60
 TIMEOUT_S = 90
 _DROP = (
@@ -26,7 +26,7 @@ _DROP = (
 
 
 def script_path(env: dict | None = None) -> str:
-    """Explicit path, or the USMail builder when that file is present. Off otherwise."""
+    """Explicit path, or the Example builder when that file is present. Off otherwise."""
     env = os.environ if env is None else env
     raw = env.get("BURST_WAVEBOARD")
     if raw is None:

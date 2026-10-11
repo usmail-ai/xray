@@ -35,7 +35,7 @@
         "to": { "type": "string", "minLength": 1, "maxLength": 80, "description": "Seat that got the prompt. Seat id or display name resolved through aliases." }
       },
       "examples": [
-        { "t_ct": "2026-10-08T14:42:00-05:00", "from": "Blaze", "to": "Operator" }
+        { "t_ct": "2026-10-08T14:42:00-05:00", "from": "Lead", "to": "Operator" }
       ]
     }
   },

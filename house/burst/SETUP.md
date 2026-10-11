@@ -363,21 +363,21 @@ If there is work, write a watcher start, do the check, then write the matching e
 
 ### Seat inboxes
 
-The host feed loop writes one line per new event id. It does not go through the page server. `BURST_INBOX` sets the directory (default `fleet/inbox`). On the USMail collector the default is `/workspace/live-mesh-run/fleet/inbox`. Roles are [inbox-roles.json](inbox-roles.json). The line is [inbox.schema.json](inbox.schema.json).
+The host feed loop writes one line per new event id. It does not go through the page server. `BURST_INBOX` sets the directory (default `fleet/inbox`). On the Example collector the default is `/srv/live-mesh-run/fleet/inbox`. Roles are [inbox-roles.json](inbox-roles.json). The line is [inbox.schema.json](inbox.schema.json).
 
 | Seat | File | What arrives |
 |---|---|---|
 | Critic | `critic.jsonl` | new and updated pull requests |
-| ARCH1 | `arch1.jsonl` | Critic PASS and green CI on the same head sha |
+| Maker | `maker.jsonl` | Critic PASS and green CI on the same head sha |
 | Chaos | `chaos.jsonl` | merges to `develop` |
-| Operator | `operator.jsonl` | Railway deploys and holds, lab issues, and issues or comments asking for Railway, lab, labtest, or cloud agents, or mentioning Operator or operator0x |
-| CoS | `cos.jsonl` | stalls (no activity on an open pull request for `stall_hours`, default 6), watcher gaps, and anything labeled or mentioning Blaze or `needs-decision` |
+| Operator | `operator.jsonl` | Railway deploys and holds, lab issues, and issues or comments asking for Railway, lab, labtest, or cloud agents, or mentioning Operator or ops-app |
+| CoS | `cos.jsonl` | stalls (no activity on an open pull request for `stall_hours`, default 6), watcher gaps, and anything labeled or mentioning Lead or `needs-decision` |
 
 A watcher reads its own file first and records the last id. It keeps its current checks as a backup. Files are trimmed to `keep_days` (default 7).
 
-Only ARCH1 is uploaded. `push-inbox.mjs` posts new lines from `arch1.jsonl` to `BURST_INBOX_URL`. `GET /inbox/arch1?since=<id>` requires the arch1 GitHub App installation token, the same check as `POST /activity` (bot `arch10x1[bot]`). Other seats are not exposed.
+Only Maker is uploaded. `push-inbox.mjs` posts new lines from `maker.jsonl` to `BURST_INBOX_URL`. `GET /inbox/maker?since=<id>` requires the maker GitHub App installation token, the same check as `POST /activity` (bot `maker-app[bot]`). Other seats are not exposed.
 
-When a pass has new events, the loop runs the optional waveboard builder if it is configured. `BURST_WAVEBOARD` is the script path. When unset, the USMail path `/workspace/0xray-fleet/house/watchers/build_waveboard.py` is used if that file exists. The run is debounced to once a minute, in a subprocess with a timeout, and it receives only `GITHUB_READ_TOKEN`. Set `BURST_WAVEBOARD=off` to skip it. A failure does not stop the feed.
+When a pass has new events, the loop runs the optional waveboard builder if it is configured. `BURST_WAVEBOARD` is the script path. When unset, the Example path `/srv/fleet-house/house/watchers/build_waveboard.py` is used if that file exists. The run is debounced to once a minute, in a subprocess with a timeout, and it receives only `GITHUB_READ_TOKEN`. Set `BURST_WAVEBOARD=off` to skip it. A failure does not stop the feed.
 
 ### Live waveboard
 
@@ -497,7 +497,7 @@ The `examples` array in `activity.schema.json` is the accepted shape. Turn, suba
 
 `seat` is the seat that got the prompt: a seat id, or a display name that resolves through `aliases`. `kind` is `prompt`. `action` is `sent`. That pulse keeps the seat working for 10 minutes and counts for `fleet.missing_activity`. `start` and `end` lines with a `tag` are also valid, but only `sent` pulses. Never write the prompt text. The shape is [prompts.schema.json](prompts.schema.json).
 
-Older houses wrote `{"t_ct":"…","from":"Blaze","to":"Operator"}`. The collector still reads that shape as a `sent` pulse for the `to` seat, so an old file keeps working. Write new lines in the format above. `POST /activity` takes only the new format.
+Older houses wrote `{"t_ct":"…","from":"Lead","to":"Operator"}`. The collector still reads that shape as a `sent` pulse for the `to` seat, so an old file keeps working. Write new lines in the format above. `POST /activity` takes only the new format.
 
 ## 9. Roles and the stamped plate
 

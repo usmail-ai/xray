@@ -14,8 +14,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-USMAIL_INBOX = "/workspace/live-mesh-run/fleet/inbox"
-MIRROR_SEAT = "arch1"
+MIRROR_SEAT = "maker"
 _BANNED = re.compile(r"body|text|message", re.I)
 _SECRET = re.compile(r"ghs_|github_pat_|BEGIN PRIVATE|AKIA[0-9A-Z]{16}")
 _SEAT_FILE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,40}$")
@@ -236,7 +235,7 @@ def _direct(event: dict, roles: dict) -> list[dict]:
         extra = [needle for needle in mentioned if not (lab_label and needle.casefold() == "lab")]
         if lab_label and not extra:
             reason = "lab issue"
-        elif any(needle.casefold() in ("operator", "operator0x") for needle in extra) and not any(
+        elif any(needle.casefold() in ("operator", "ops-app") for needle in extra) and not any(
             needle.casefold() in ("railway", "lab", "labtest", "cloud agent", "cloud agents") for needle in extra
         ):
             reason = "mentions operator"
@@ -257,7 +256,7 @@ def _direct(event: dict, roles: dict) -> list[dict]:
 
 
 def _ready_lines(events: list[dict], roles: dict) -> list[dict]:
-    if not _seat_rules(roles, "arch1").get("ready", True):
+    if not _seat_rules(roles, "maker").get("ready", True):
         return []
     groups: dict[tuple, dict] = {}
     for event in events:
@@ -310,7 +309,7 @@ def _ready_lines(events: list[dict], roles: dict) -> list[dict]:
             if not sample.get("t_ct"):
                 sample["t_ct"] = passed.get("t_ct")
             line = _line(
-                sample, "arch1", "critic pass and green ci",
+                sample, "maker", "critic pass and green ci",
                 line_id=f"ready:{repo}#{number}:{sha}", line_type="ready")
             if line:
                 out.append(line)

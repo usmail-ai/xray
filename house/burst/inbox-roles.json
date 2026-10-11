@@ -2,30 +2,30 @@
   "keep_days": 7,
   "stall_hours": 6,
   "watcher_gap_hours": 6,
-  "mirror_seat": "arch1",
+  "mirror_seat": "maker",
   "develop_branches": ["develop"],
-  "watcher_seats": ["critic", "arch1", "chaos", "operator", "cos"],
+  "watcher_seats": ["critic", "maker", "chaos", "operator", "cos"],
   "aliases": {
     "Critic": "critic",
-    "ARCH1": "arch1",
+    "Maker": "maker",
     "Chaos": "chaos",
     "Operator": "operator",
     "CoS": "cos"
   },
   "seats": {
     "critic": { "kinds": ["pr_open", "pr_update"] },
-    "arch1": { "ready": true },
+    "maker": { "ready": true },
     "chaos": { "merge_bases": ["develop"] },
     "operator": {
       "kinds": ["deploy", "deploy_fail", "deploy_pending", "deploy_hold"],
       "labels": ["lab"],
-      "needles": ["railway", "lab", "labtest", "cloud agent", "cloud agents", "operator", "operator0x"]
+      "needles": ["railway", "lab", "labtest", "cloud agent", "cloud agents", "operator", "ops-app"]
     },
     "cos": {
       "stalls": true,
       "watcher_gaps": true,
-      "labels": ["needs-decision", "blaze"],
-      "needles": ["blaze", "needs-decision"]
+      "labels": ["needs-decision", "lead"],
+      "needles": ["lead", "needs-decision"]
     }
   }
 }

@@ -64,28 +64,28 @@ class Route(unittest.TestCase):
         self.assertEqual(kinds, ["pr_open", "pr_update"])
         self.assertFalse((self.root / "chaos.jsonl").exists())
 
-    def test_arch1_needs_critic_pass_and_green_ci_on_the_same_sha(self):
+    def test_maker_needs_critic_pass_and_green_ci_on_the_same_sha(self):
         passed = event("org/repo#1:critic", "critic_pass", hints={"sha": SHA, "title": "add route"})
         green = event("org/repo#1:ci", "ci_pass", hints={"sha": SHA, "title": "add route"})
         self.deliver([passed, green])
-        ready = read_lines(self.root / "arch1.jsonl")
+        ready = read_lines(self.root / "maker.jsonl")
         self.assertEqual(len(ready), 1)
         self.assertEqual(ready[0]["reason"], "critic pass and green ci")
         self.assertEqual(ready[0]["sha"], SHA)
-        self.assertEqual(ready[0]["seat"], "arch1")
+        self.assertEqual(ready[0]["seat"], "maker")
         other = Path(tempfile.mkdtemp())
         inbox.deliver([
             event("org/repo#2:critic", "critic_pass", number=2, hints={"sha": SHA, "title": "other"}),
             event("org/repo#2:ci", "ci_pass", number=2, hints={"sha": SHA_B, "title": "other"}),
         ], directory=other, roles=self.roles, now=NOW, activity=[])
-        self.assertFalse((other / "arch1.jsonl").exists())
+        self.assertFalse((other / "maker.jsonl").exists())
         blocked = Path(tempfile.mkdtemp())
         inbox.deliver([
             event("org/repo#3:critic", "critic_pass", number=3, hints={"sha": SHA, "title": "blocked"}),
             event("org/repo#3:ci", "ci_pass", number=3, t_ct="2026-10-09T17:00:00+00:00", hints={"sha": SHA, "title": "blocked"}),
             event("org/repo#3:ci-fail", "ci_fail", number=3, t_ct="2026-10-09T17:40:00+00:00", hints={"sha": SHA, "title": "blocked"}),
         ], directory=blocked, roles=self.roles, now=NOW, activity=[])
-        self.assertFalse((blocked / "arch1.jsonl").exists())
+        self.assertFalse((blocked / "maker.jsonl").exists())
 
     def test_chaos_gets_merges_to_develop_only(self):
         self.deliver([
@@ -107,7 +107,7 @@ class Route(unittest.TestCase):
                   hints={"title": "note", "text": f"please railway this {secret}"}),
             event("org/repo!10:comment:2", "comment", number=10, hints={"title": "thanks", "text": "thanks"}),
             event("org/repo!11:open", "issue_open", number=11, hints={"title": "choice", "labels": ["needs-decision"]}),
-            event("org/repo!12:comment:3", "comment", number=12, hints={"title": "ask", "text": "ask Blaze"}),
+            event("org/repo!12:comment:3", "comment", number=12, hints={"title": "ask", "text": "ask Lead"}),
         ])
         operator = read_lines(self.root / "operator.jsonl")
         reasons = [line["reason"] for line in operator]
@@ -184,7 +184,7 @@ class Wave(unittest.TestCase):
 
         clock = {"n": 0.0}
         board = waveboard.Waveboard(
-            "/workspace/0xray-fleet/house/watchers/build_waveboard.py",
+            "/srv/fleet-house/house/watchers/build_waveboard.py",
             debounce_s=60, clock=lambda: clock["n"], runner=runner)
         parent = {"GITHUB_TOKEN": "write-token", "GITHUB_READ_TOKEN": "read-token", "GH_TOKEN": "write-token"}
         self.assertEqual(board.run(env=parent), "ran")
