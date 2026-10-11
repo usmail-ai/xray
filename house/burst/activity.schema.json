@@ -83,7 +83,7 @@
   "$defs": {
     "seatActivity": {
       "title": "fleet/activity.jsonl line",
-      "description": "One start or end of background work on a box or laptop seat. Same object POST /activity accepts. Names and times only: no prompt body and no message text. A seat is working while a start has no later end for the same seat, kind, and tag, for at most 60 minutes. That light is not counted in N of M.",
+      "description": "One start or end of background work on a box or laptop seat. Same object POST /activity accepts. Names and times only: no prompt body and no message text. A watcher writes a start only when the seat has live work, then the matching end. A seat is working while a start has no later end for the same seat, kind, and tag, for at most 60 minutes. A lone open start expires at that cap. That light is not counted in N of M.",
       "type": "object",
       "additionalProperties": false,
       "required": ["t_ct", "kind", "action", "tag"],
@@ -97,8 +97,10 @@
       "examples": [
         { "t_ct": "2026-10-09T09:00:00-05:00", "seat": "builder", "kind": "turn", "action": "start", "tag": "issue-1" },
         { "t_ct": "2026-10-09T09:04:00-05:00", "seat": "builder", "kind": "turn", "action": "end", "tag": "issue-1" },
-        { "t_ct": "2026-10-09T09:01:00-05:00", "seat": "builder", "kind": "subagent", "action": "start", "tag": "review" },
-        { "t_ct": "2026-10-09T09:02:00-05:00", "seat": "builder", "kind": "watcher", "action": "start", "tag": "repos" }
+        { "t_ct": "2026-10-09T09:01:00-05:00", "seat": "builder", "kind": "subagent", "action": "start", "tag": "computerUse" },
+        { "t_ct": "2026-10-09T09:01:30-05:00", "seat": "builder", "kind": "subagent", "action": "end", "tag": "computerUse" },
+        { "t_ct": "2026-10-09T09:02:00-05:00", "seat": "builder", "kind": "watcher", "action": "start", "tag": "repos" },
+        { "t_ct": "2026-10-09T09:02:30-05:00", "seat": "builder", "kind": "watcher", "action": "end", "tag": "repos" }
       ]
     }
   },
@@ -106,8 +108,10 @@
     { "t_ct": "2026-10-09T09:00:00-05:00", "seat": "builder", "kind": "prompt", "action": "start", "tag": "issue-1" },
     { "t_ct": "2026-10-09T09:00:01-05:00", "seat": "builder", "kind": "turn", "action": "start", "tag": "issue-1" },
     { "t_ct": "2026-10-09T09:00:02-05:00", "seat": "builder", "kind": "turn", "action": "end", "tag": "issue-1" },
-    { "t_ct": "2026-10-09T09:01:00-05:00", "seat": "builder", "kind": "subagent", "action": "start", "to": "gate", "tag": "review" },
+    { "t_ct": "2026-10-09T09:01:00-05:00", "seat": "builder", "kind": "subagent", "action": "start", "to": "gate", "tag": "computerUse" },
+    { "t_ct": "2026-10-09T09:01:30-05:00", "seat": "builder", "kind": "subagent", "action": "end", "to": "gate", "tag": "computerUse" },
     { "t_ct": "2026-10-09T09:02:00-05:00", "seat": "builder", "kind": "watcher", "action": "start", "tag": "repos" },
+    { "t_ct": "2026-10-09T09:02:30-05:00", "seat": "builder", "kind": "watcher", "action": "end", "tag": "repos" },
     { "t_ct": "2026-10-09T09:03:00-05:00", "seat": "cloud", "kind": "cloud_agent", "action": "launch", "agent": "agent-1", "tag": "issue-1" },
     { "t_ct": "2026-10-09T09:04:00-05:00", "seat": "lab", "kind": "lab_run", "action": "pass", "tag": "stretch-1" },
     { "t_ct": "2026-10-09T09:04:30-05:00", "seat": "gate", "kind": "review", "action": "pass", "tag": "pr-1" },
