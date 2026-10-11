@@ -138,3 +138,4 @@ test-results/
 playwright-report/
 tests/config/coverage/
 tests/config/test-results/
+house/live/**/__pycache__/

@@ -1,0 +1,134 @@
+{
+  "keep_days": 7,
+  "stall_hours": 6,
+  "watcher_gap_hours": 6,
+  "mirror_seat": "builder",
+  "develop_branches": [
+    "develop"
+  ],
+  "watcher_seats": [
+    "reviewer",
+    "builder",
+    "tester",
+    "operator",
+    "coord"
+  ],
+  "aliases": {
+    "Reviewer": "reviewer",
+    "Builder": "builder",
+    "Tester": "tester",
+    "Operator": "operator",
+    "Coord": "coord",
+    "QA": "qa",
+    "QA": "qa",
+    "blinky": "coord",
+    "Growth": "growth",
+    "QaOne": "qa-one",
+    "Lab Tester: QaOne": "qa-one",
+    "QaTwo": "qa-two",
+    "Lab Tester: QA two": "qa-two",
+    "Triager": "triager",
+    "Ticket Triager": "triager",
+    "Seat-C": "seat-c",
+    "Chat Bot": "chatbot",
+    "ChatBot": "chatbot",
+    "SEO Researcher": "seo-researcher",
+    "SEO Writer": "seo-writer",
+    "Offsite Copier": "offsite-copier",
+    "Builder-cloud": "builder-cloud"
+  },
+  "seats": {
+    "reviewer": {
+      "kinds": [
+        "pr_open",
+        "pr_update"
+      ]
+    },
+    "builder": {
+      "ready": true
+    },
+    "tester": {
+      "merge_bases": [
+        "develop"
+      ]
+    },
+    "operator": {
+      "kinds": [
+        "deploy",
+        "deploy_fail",
+        "deploy_pending",
+        "deploy_hold"
+      ],
+      "labels": [
+        "lab"
+      ],
+      "needles": [
+        "railway",
+        "lab",
+        "labtest",
+        "cloud agent",
+        "cloud agents",
+        "operator",
+        "ops-app"
+      ]
+    },
+    "coord": {
+      "stalls": false,
+      "watcher_gaps": true,
+      "labels": [
+        "needs-decision",
+        "lead"
+      ],
+      "needles": [
+        "lead",
+        "needs-decision"
+      ]
+    }
+  },
+  "_note_stalls": "coord stall lines come from the board model (live card, no beat for 60 min: feed/live_board.py), not the 6 h PR#5 scan",
+  "extra_seats": {
+    "qa-one": {
+      "merge_bases": [
+        "develop"
+      ],
+      "reason": "merge to develop (qa-one retest)"
+    },
+    "qa-two": {
+      "merge_bases": [
+        "develop"
+      ],
+      "reason": "merge to develop (qa two retest)"
+    },
+    "triager": {
+      "kinds": [
+        "issue_open"
+      ],
+      "reason": "new issue to triage"
+    },
+    "growth": {
+      "needles": [
+        "growth",
+        "go-to-market"
+      ],
+      "reason": "mentions growth"
+    },
+    "seat-c": {
+      "needles": [
+        "seat-c"
+      ],
+      "reason": "mentions seat-c"
+    },
+    "chatbot": {
+      "needles": [
+        "chat bot",
+        "chatbot"
+      ],
+      "reason": "mentions chat bot"
+    },
+    "seo-researcher": {},
+    "seo-writer": {},
+    "offsite-copier": {}
+  },
+  "_note_extra_seats": "extra_seats are routed by feed/inbox_pass.py (kinds / merge_bases / needles); SEO seats have keys but no routes yet",
+  "_note_builder_cloud": "builder-cloud gets every builder line (mirrored server-side in app/server.mjs) plus nudges to builder; no routes of its own"
+}
