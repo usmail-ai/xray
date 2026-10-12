@@ -69,9 +69,45 @@ HOUSE_TAGS = {"HOUSE": "HOUSE", "merge-queue": "merge-queue", "digest": "digest"
 CARD_ID_RE = re.compile(r"\b([A-Z][A-Z0-9]{1,9}-\d{1,5})\b")
 TICK_RE = re.compile(r"(?m)^- \[(.)\] ")
 ACTIVE_MIN = 15
-SEATS = ["Builder", "Builder-cloud", "Reviewer", "Tester", "QaOne", "QaTwo", "QA", "Operator", "Coord"]   # file owners
-BOARD = {"QaOne": "QA", "QaTwo": "QA"}   # board seats: QA = QaOne + QA two + QA
-BOARD_SEATS = ["Builder", "Builder-cloud", "Reviewer", "Tester", "QA", "Operator", "Coord"]
+_DEFAULT_SEATS = ["Builder", "Builder-cloud", "Reviewer", "Tester", "QaOne", "QaTwo", "QA", "Operator", "Coord"]
+_DEFAULT_FOLD = {"QaOne": "QA", "QaTwo": "QA"}   # board seats: QA = QaOne + QA two + QA
+_DEFAULT_BOARD_SEATS = ["Builder", "Builder-cloud", "Reviewer", "Tester", "QA", "Operator", "Coord"]
+
+
+def load_seat_config(raw=None):
+    """LIVE_FLEET_SEATS: a JSON list of seat names, or {"seats":[...],"board":[...],"fold":{member:board}},
+    or a path to that JSON. "board" is the counted header list. Unset or invalid keeps the Example list."""
+    if raw is None:
+        raw = os.environ.get("LIVE_FLEET_SEATS", "")
+    text = str(raw).strip()
+    if not text:
+        return list(_DEFAULT_SEATS), dict(_DEFAULT_FOLD), list(_DEFAULT_BOARD_SEATS)
+    try:
+        data = json.loads(Path(text).read_text() if text[0] not in "{[" else text)
+    except (OSError, ValueError, IndexError):
+        return list(_DEFAULT_SEATS), dict(_DEFAULT_FOLD), list(_DEFAULT_BOARD_SEATS)
+    if isinstance(data, list):
+        seats = [str(s) for s in data if isinstance(s, str) and s.strip()]
+        return (seats, {}, list(seats)) if seats else (list(_DEFAULT_SEATS), dict(_DEFAULT_FOLD), list(_DEFAULT_BOARD_SEATS))
+    if isinstance(data, dict):
+        seats = [str(s) for s in (data.get("seats") or []) if isinstance(s, str) and s.strip()]
+        board = [str(s) for s in (data.get("board") or []) if isinstance(s, str) and s.strip()]
+        fold = {str(k): str(v) for k, v in (data.get("fold") or {}).items()
+                if isinstance(k, str) and isinstance(v, str) and k and v}
+        if not seats and not board:
+            return list(_DEFAULT_SEATS), dict(_DEFAULT_FOLD), list(_DEFAULT_BOARD_SEATS)
+        if not seats:
+            seats = list(board)
+        if not board:
+            board = [s for s in seats if s not in fold]
+            for v in fold.values():
+                if v not in board:
+                    board.append(v)
+        return seats, fold, board
+    return list(_DEFAULT_SEATS), dict(_DEFAULT_FOLD), list(_DEFAULT_BOARD_SEATS)
+
+
+SEATS, BOARD, BOARD_SEATS = load_seat_config()   # file owners, fold, counted header seats
 SEAT_OF = {"tester": "Tester", "qa-one": "QaOne", "qa-two": "QaTwo"}
 SEV_RE = re.compile(r"(?i)severity\W{0,8}(S[0-4])\b")
 STATUS_RE = re.compile(r"(?im)^\W{0,4}status\W{0,6}(OPEN|FIXED|REOPENED|PARTLY|WITHDRAWN|PASS|FAIL|CLOSED|WONTFIX|DUPLICATE)\b")

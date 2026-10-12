@@ -42,12 +42,15 @@ second process. `server.mjs` spawns it as a child: `python3 -B -u collector/live
 
 - Builder: Dockerfile (`house/live/app/Dockerfile`): `node:20-bookworm-slim` plus Debian `python3` (3.11),
   `tzdata`, `ca-certificates`. Stdlib Python only.
-- Start: `node server.mjs` (from `house/live/app/railway.json`). The child start is shown in section 1.
+- Start: `node server.mjs` (from `house/live/app/railway.json`, and from `house/live/app/.railway/railway.ts`). The child start is shown in section 1.
 - Repo-root `railway.json` (`node mcp-server.mjs`) belongs to the xray MCP server, not to this. Do not deploy the
   live board from the repo root. Deploy with `house/live/app/deploy.sh`: it assembles a deploy dir (app files plus
   `collector/` = the `feed/live_*.py` modules and `house/live-mesh/fetch_feed.py`) and runs
   `railway up --service <service> --detach` from that dir. If you deploy from GitHub instead, set the root directory to
   a dir laid out the same way.
+- `deploy.sh` names: `LIVE_RAILWAY_PROJECT` (default `live-board`), `LIVE_RAILWAY_SERVICE` (default `live-mesh`), `MESH_APP_DEPLOY_DIR` (default `/srv/live/deploy`). These are the project, the service, and the railway-linked directory. They are not Railway variables on the service.
+- `LIVE_PUBLIC_OVERLAY` is a directory on the machine that runs `deploy.sh`. After the kit `public/` is copied, that directory is copied on top, so a fleet's `live-config.js` and `avatars/` survive the next deploy. Unset means the kit page only.
+- `railway.json` (Config as Code) is still read until **2026-12-01**. The replacement is `house/live/app/.railway/railway.ts`: `start` `node server.mjs`, `healthcheck` `/healthz`, one replica. `deploy.sh` copies that directory into the deploy dir. Do not `railway config apply` while `railway.json` is still the service config. Before the cutoff, from the deploy dir: `railway config plan`, then `railway config apply`. Rename `service()` and `project()` in that file to match `LIVE_RAILWAY_SERVICE` and `LIVE_RAILWAY_PROJECT`. Put no secrets in the file.
 
 ## 4. Env var names (names only)
 
@@ -62,7 +65,8 @@ Railway service (`server.mjs`):
 | `SEAT_KEYS` | required for inboxes | JSON `{seat: sha256hex}`; hashes only, from `feed/seat_keys.sh publish` |
 | `GITHUB_READ_TOKEN` | for the collector | fine-grained, read-only |
 | `MESH_DATA_DIR` | optional | default `/data` |
-| `COLLECTOR`, `COLLECTOR_REPOS`, `COLLECTOR_HEALTH_URLS`, `COLLECTOR_WATCH_S` | optional | `off`; `org/repo ...`; health URLs; default 45 |
+| `COLLECTOR`, `COLLECTOR_REPOS`, `COLLECTOR_HEALTH_URLS`, `COLLECTOR_WATCH_S` | optional | `off`; `org/repo ...`; space-separated app `/health` URLs (unset means the collector probes no host); default 45 |
+| `LIVE_FLEET_SEATS` | optional | JSON list of seat names, or `{"seats","board","fold"}`, or a path to that JSON. Unset keeps the example seat list. Passed to the collector. The header "N of M bots active" counts `board` (or the list). |
 | `NUDGE_L1_S`, `NUDGE_L2_S`, `NUDGE_L3_S`, `SILENT_S`, `HELD_MAX_S` | optional | 3600, 1800, 7200, 7200, 259200 |
 | `EMITTER_WORKING_S`, `BOX_STALE_S` | optional | 120, 180 |
 | `GITHUB_HOLD_LABEL` | optional | label that holds a card; default `on-hold` |
@@ -76,17 +80,22 @@ Railway service (`server.mjs`):
 | `UPSTREAM_PINNED`, `XRAY_OURS` | optional | `owner/name#N` list; logins that count as this fleet. Both unset means nothing is tracked |
 
 One Node process (`server.mjs`) serves the page and supervises the collector child. There is no second page service.
-The board is the `board` object on the feed header, built by `feed/live_board.py` in the feed pass.
+The board is the `board` object on the feed header, built by `feed/live_board.py` from the events in that pass.
+`LIVE_MODE=github` (the host child) builds that board from GitHub events. It does not read house files. When the GitHub feed's board has cards, the server uses it. A box board is used only when the GitHub board has none.
 
 Collector child: its env is built from scratch by the server and holds only `GH_TOKEN` (= `GITHUB_READ_TOKEN`), `HOME`,
-`PATH`, `TZ`, `LIVE_MODE=github`, `LIVE_NO_CHECKS=1`, `LIVE_HEALTH_URLS`, `LIVE_MESH_SRC`, and, only when you set them,
-`GITHUB_HOLD_LABEL`, `NO_NUDGE_REPOS`, `UPSTREAM_REPO`, `UPSTREAM_PINNED`, `XRAY_REPO`, `XRAY_OURS`, `SEAT_PRESENCE`.
+`PATH`, `TZ`, `LIVE_MODE=github`, `LIVE_NO_CHECKS=1`, `LIVE_HEALTH_URLS` (from `COLLECTOR_HEALTH_URLS`, empty when unset), `LIVE_MESH_SRC`, and, only when you set them,
+`GITHUB_HOLD_LABEL`, `NO_NUDGE_REPOS`, `UPSTREAM_REPO`, `UPSTREAM_PINNED`, `XRAY_REPO`, `XRAY_OURS`, `SEAT_PRESENCE`, `LIVE_FLEET_SEATS`.
 It never sees the password, session secret, ingest secret, seat hashes, or the Jira token.
+The child `--health` argument is the first URL in `COLLECTOR_HEALTH_URLS`, or empty. There is no example host.
+
+Stored collector events are relabeled with the current `LIVE_NODE_MAP` when the store is loaded. A seat change does not require deleting the store.
 
 Box (feed pass, `feed/supervisor.sh`): `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID` (read-only
 mint only), `MESH_RUN`, `LIVE_HEALTH_URLS`, `LIVE_MERGE_QUEUE`, `LIVE_REST_FLOOR`, `LIVE_GQL_FLOOR`, `LIVE_BACKFILL_SECONDS`, `LIVE_RAILWAY_TARGETS` (optional deploy poller; JSON list, ids from your own Railway projects).
-Box pusher: `MESH_URL`, `INGEST_SECRET` (from a 0600 file).
+Box pusher (`house/live/feed/push_to_host.sh`, not `house/burst/push.sh`): `LIVE_HOME` (default `/srv/live`), `MESH_RUN` (default `/srv/live/run`), `FEED` (default `$MESH_RUN/feed/live-events.json`), plus `MESH_URL` and `INGEST_SECRET` in `$MESH_RUN/.push-env` (mode 0600).
 Seat helpers and emitter: `LIVE_URL`, `LIVE_KEY`, `SEAT_KEYS_DIR`.
+Seat keys (`feed/seat_keys.sh`): `SEAT_KEYS_SEATS` or `SEATS_JSON` for the seat list, `LIVE_RAILWAY_SERVICE`, `MESH_APP_DEPLOY_DIR`, `SEAT_KEYS_DIR`. Unset seats keep the example list. New keys are `<seat>.key`. A legacy bare `builder-cloud` file is still read.
 
 ## 5. Volume
 
@@ -95,8 +104,10 @@ One volume on the service, mounted at `/data`. A 5 GB volume is enough to start.
 
 ## 6. Healthcheck
 
-`healthcheckPath: /healthz` in `railway.json`. `server.mjs` answers it on `$PORT`. The collector does not
-answer HTTP. The `/health` URLs in `COLLECTOR_HEALTH_URLS` are your app's endpoints, polled for status code only.
+`healthcheckPath: /healthz` in `railway.json`, and `healthcheck: "/healthz"` in `house/live/app/.railway/railway.ts`. `server.mjs` answers `GET /healthz` on `$PORT`. The collector does not
+answer HTTP. The `/health` URLs in `COLLECTOR_HEALTH_URLS` are your app's endpoints, polled for status code only. Unset means no probe. `railway.json` stops being read on 2026-12-01; switch to the `.railway/railway.ts` file before that date (section 3).
+
+Install mismatches are listed as Symptom / Cause / Fix in [house/live/docs/faq.md](../live/docs/faq.md).
 
 ## 7. Key model per process
 

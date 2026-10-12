@@ -349,3 +349,26 @@ test('silent seat: >2h without activity while owning live work -> fleet seat sil
   await push(now - 60e3, now - 3 * 3600e3, []); s = await silent();
   assert.equal(s.length, 1);
 });
+
+test('collector health arg is COLLECTOR_HEALTH_URLS, with no example host', () => {
+  const src = fs.readFileSync(path.join(APP, 'server.mjs'), 'utf8');
+  assert.equal(src.includes('dev.example.com/health'), false);
+  assert.match(src, /COLLECTOR_HEALTH_URLS/);
+  assert.match(src, /LIVE_FLEET_SEATS/);
+});
+
+test('github feed board is the page board when it has cards', async () => {
+  const gfile = path.join(DATA, 'feed', 'github-events.json');
+  const card = { key: 'example-org/app#4242', kind: 'pr', repo: 'example-org/app', number: 4242, title: 'host card', url: '', owner: 'Builder', stage: 'review', state: 'live', packet: {}, beats: [], last_beat_t: Date.now() };
+  const ghFeed = { title: 't', generated_at: new Date().toISOString(), event_count: 0, events: [], board: { updated_ct: 't', cards: [card] } };
+  fs.mkdirSync(path.dirname(gfile), { recursive: true });
+  fs.writeFileSync(gfile + '.tmp', JSON.stringify(ghFeed));
+  fs.renameSync(gfile + '.tmp', gfile);
+  let f;
+  for (let i = 0; i < 40; i++) {
+    f = await (await fetch(BASE + '/live-events.json', { headers: { Cookie: cookie } })).json();
+    if (f.board && f.board.cards.some(c => c.number === 4242)) break;
+    await new Promise(r => setTimeout(r, 150));
+  }
+  assert.ok(f.board.cards.some(c => c.number === 4242));
+});

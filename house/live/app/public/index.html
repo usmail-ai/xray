@@ -781,10 +781,11 @@
     $('fleet').textContent = L.fleetLine(hot);
     $('blackout').textContent = L.blackoutLine(now);
     $('play').innerHTML = L.isPlaying(state.live, playing) ? '&#10074;&#10074; Pause' : '&#9654; Play';
-    var bots = L.SEAT_NAMES.filter(function (k) { return L.own(hot, k) || fleetActive(k); }).length;
+    var seatNames = (window.LIVE_FLEET && window.LIVE_FLEET.seats) ? Object.keys(window.LIVE_FLEET.seats) : L.SEAT_NAMES;
+    var bots = seatNames.filter(function (k) { return L.own(hot, k) || fleetActive(k); }).length;
     var total = window.LIVE_FEED_TOTAL != null ? window.LIVE_FEED_TOTAL : state.events.length;
     var st = state.generatedAt ? 'Updated <b title="' + L.fmtCt(state.generatedAt) + '">' + L.ago(now - state.generatedAt) + '</b>' : 'Waiting for feed';
-    st += ' · ' + Number(total).toLocaleString('en-US') + ' events · ' + bots + ' of ' + L.SEAT_NAMES.length + ' bots active';
+    st += ' · ' + Number(total).toLocaleString('en-US') + ' events · ' + bots + ' of ' + seatNames.length + ' bots active';
     if (fetchError) st += ' · <span style="color:#ff6e5a">' + fetchError + '</span>';
     $('status').innerHTML = st;
   }

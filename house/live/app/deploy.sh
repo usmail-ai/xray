@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Deploy app/ to the Railway service "live-mesh" (project live-board) ONLY.
-# Copies the app files into the railway-linked deploy dir (MESH_APP_DEPLOY_DIR, default /srv/live/deploy),
-# leaving that dir's local secret files untouched, then `railway up --service live-mesh --detach`.
+# Deploy app/ to one Railway service.
+# LIVE_RAILWAY_PROJECT (default live-board), LIVE_RAILWAY_SERVICE (default live-mesh),
+# MESH_APP_DEPLOY_DIR (default /srv/live/deploy). LIVE_PUBLIC_OVERLAY, when set, is a directory
+# copied onto public/ after the kit files (live-config.js, avatars). Secret files in the deploy dir stay.
 set -euo pipefail
 PROJECT="${LIVE_RAILWAY_PROJECT:-live-board}"; SERVICE="${LIVE_RAILWAY_SERVICE:-live-mesh}"
 APP="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -10,6 +11,11 @@ DST="${MESH_APP_DEPLOY_DIR:-/srv/live/deploy}"
 [ "$(cd "$DST" && pwd -P)" = "$APP" ] || {
   cp "$APP"/server.mjs "$APP"/package.json "$APP"/package-lock.json "$APP"/railway.json "$APP"/.railwayignore "$APP"/Dockerfile "$DST"/
   rm -rf "$DST/public.new"; cp -r "$APP/public" "$DST/public.new"; rm -rf "$DST/public"; mv "$DST/public.new" "$DST/public"
+  if [ -n "${LIVE_PUBLIC_OVERLAY:-}" ]; then
+    [ -d "$LIVE_PUBLIC_OVERLAY" ] || { echo "LIVE_PUBLIC_OVERLAY is not a directory" >&2; exit 1; }
+    cp -a "$LIVE_PUBLIC_OVERLAY"/. "$DST/public/"
+  fi
+  if [ -d "$APP/.railway" ]; then rm -rf "$DST/.railway"; cp -a "$APP/.railway" "$DST/.railway"; fi
 }
 # collector/ = the feed modules + house/live-mesh/fetch_feed.py from this repo (copied at deploy time, not committed)
 rm -rf "$DST/collector"; mkdir -p "$DST/collector/upstream"

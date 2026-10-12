@@ -159,135 +159,31 @@ Set the token as the host variable `GITHUB_READ_TOKEN`. Keep it out of the repo,
 
 ## 4. Railway deploy
 
-The page and the collector run as one project on the host. The collector is `house/live-mesh/fetch_feed.py`. It writes the event store the page reads.
+Follow [DEPLOY.md](DEPLOY.md). That file is the start command, the environment names, the health check, and the root directory. Do not start this service with `python3 house/live-mesh/fetch_feed.py`, and do not deploy it from the repo root.
 
-### Create the project
+SETUP and DEPLOY agree on all of the following:
 
-CLI:
+- Start command: `node server.mjs`. One Node process serves the page and supervises the collector child.
+- Service health check: `GET /healthz`. The collector does not answer HTTP.
+- Root directory: the directory `house/live/app/deploy.sh` assembles. Not the repo root.
+- Watched repos: `COLLECTOR_REPOS`. App health probes: `COLLECTOR_HEALTH_URLS`. Unset means the collector probes no host.
+- `railway.json` is still read until 2026-12-01. The replacement file is `house/live/app/.railway/railway.ts`. See DEPLOY.
 
-```bash
-railway login
-railway init --name burst-live
-```
-
-Repo-connected: in the dashboard, New Project → Deploy from GitHub repo → select this repo and the branch you ship. Or `railway add --repo <org>/<repo>`. Root directory stays the repo root.
-
-### Variables
-
-Set these on the service. Dashboard → service → Variables, or:
-
-```bash
-printf '%s' '<fine-grained-pat>' | railway variable set GITHUB_READ_TOKEN --stdin
-printf '%s' '<long-random>' | railway variable set INGEST_SECRET --stdin
-printf '%s' '<long-random>' | railway variable set MESH_PASSWORD --stdin
-railway variable set BURST_REPOS='<org>/<repo>'
-railway variable set BURST_HEALTH_URL='https://<your-domain>/health'
-```
-
-`--stdin` keeps the secret out of the shell history. `railway variable set` also accepts `KEY=value` when the value is not secret.
-
-Do not set `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, or `GITHUB_APP_PRIVATE_KEY_PATH` on this service.
-
-### Start command
-
-```bash
-python3 house/live-mesh/fetch_feed.py --watch 60 \
-  --out /data/live-events.json \
-  --health "$BURST_HEALTH_URL"
-```
-
-Mount a volume at `/data` so the event store survives a restart. Serve `docs-site/static/live` as the page, from that same store (`live-events.json` beside `index.html`).
-
-Health check path: `/health`. The collector's `probe` records the status code and does not read the body.
-
-### Deploy
-
-CLI, from a clean checkout:
-
-```bash
-railway up
-railway logs
-```
-
-Repo-connected: push the branch. Railway builds that commit. Confirm the log line `host GITHUB_READ_TOKEN: read-only; GitHub App private key is not loaded`. The token value is not in that line.
-
-### Custom domain
-
-Optional. Service → Settings → Networking → Custom Domain. Add the CNAME Railway shows to `<your-domain>`.
-
-### Config as code is deprecated
-
-`railway.json` and `railway.toml` (Config as Code) are deprecated. Existing files are still read for services that already use them. They stop being read on **2026-12-01**. New services cannot opt into Config as Code.
-
-Migrate before that date:
-
-```bash
-railway config migrate
-railway config plan
-railway config apply
-```
-
-Infrastructure as Code lives in `.railway/railway.ts` (Python and Go authoring are the other options). Keep secrets in Railway variables. A plan that still sees `railway.json` or `railway.toml` is blocked until that file is gone, so the two systems are not both in charge.
+Deploy names (`LIVE_RAILWAY_PROJECT`, `LIVE_RAILWAY_SERVICE`, `MESH_APP_DEPLOY_DIR`) and the public overlay (`LIVE_PUBLIC_OVERLAY`) are in DEPLOY. Install blockers are in [house/live/docs/faq.md](../live/docs/faq.md).
 
 ## 5. Box or laptop pusher
 
-The box pushes local deltas. It does not poll GitHub for the board.
+The live board pusher is `house/live/feed/push_to_host.sh`. It posts the box feed to the service. It does not poll GitHub. `house/burst/push.sh` is a different program and is not this pusher.
 
-### Install
+| Name | Default | Role |
+|---|---|---|
+| `LIVE_HOME` | `/srv/live` | Release root (`releases/`, `run/`). A repo checkout refuses to push the live feed. |
+| `MESH_RUN` | `/srv/live/run` | Feed, logs, and `$MESH_RUN/.push-env` (mode 0600). |
+| `FEED` | `$MESH_RUN/feed/live-events.json` | File that is posted. |
 
-Pin a release tag. A floating branch tip is not a pin.
+`$MESH_RUN/.push-env` holds `MESH_URL` and `INGEST_SECRET` only. The script logs timestamps and HTTP status codes. It does not print the secret.
 
-```bash
-git clone --branch <release-tag> --depth 1 <repo-url> "$HOME/burst-releases/<release-tag>"
-```
-
-Needs `node`, `python3`, and `flock`. Copy `seats.example.json` to `$BURST_STATE/seats.json` (`BURST_STATE` defaults to `~/.burst`) and fill the placeholders there, outside the repo.
-
-### First link
-
-Point `current` at the pin. Leave `BURST_OLD_STOP` unset on the first link so nothing is stopped.
-
-```bash
-export BURST_STATE="$HOME/.burst"
-unset BURST_OLD_STOP
-house/burst/release.sh "$HOME/burst-releases/<release-tag>"
-```
-
-### Supervisor and watchdog
-
-`house/burst/supervise.py` is the restart rule: start the command, and start it again when it exits, until the stop file exists. The box watchdog is that loop with 60 seconds between starts. `push.sh` posts one delta while it holds the lock on fd 9, then sleeps with `9>&-`.
-
-```bash
-export BURST_STATE="$HOME/.burst"
-PIN="$BURST_STATE/current/house/burst"
-STOP="$BURST_STATE/stop"
-rm -f "$STOP"
-while [ ! -f "$STOP" ]; do
-  export BURST_TOKEN_MINTED=$(date +%s)
-  sh "$PIN/push.sh" || true
-  sleep 60
-done
-```
-
-Create `$BURST_STATE/stop` to end the loop. `remint_due` compares wall-clock stamps (`BURST_TOKEN_MINTED` from `date +%s`). A 401 exits 75 and does not write. See fixes 4 and 9 in [PLAYBOOK.md](PLAYBOOK.md).
-
-### Zero-gap swap
-
-`release.sh` replaces `$BURST_STATE/current` with one `mv -T`, so the path is never missing. The running loop keeps the code it already loaded. Start the new loop, then stop the old one.
-
-```bash
-export BURST_STATE="$HOME/.burst"
-unset BURST_OLD_STOP
-house/burst/release.sh "$HOME/burst-releases/<new-tag>"
-```
-
-Start the supervisor loop from the new `current` in a second session. When that loop is running, stop the old one:
-
-```bash
-: > "$BURST_STATE/stop"
-```
-
-To have `release.sh` create the old stop file, set `BURST_OLD_STOP` to the old loop's stop path. The script creates it after the link exists. Point the new loop at a different stop path, or it exits on the same file.
+Pin the code with `house/live/feed/release.sh` so the script lives under `$LIVE_HOME/releases/<sha>/feed/`. `house/live/feed/watchdog.sh` starts `push_to_host.sh` when it is not already running. The first post is a full `POST /ingest`. Later posts are deltas. A 409 means refetch and continue.
 
 ## 6. Seat setup
 

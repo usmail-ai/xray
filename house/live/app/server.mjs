@@ -575,7 +575,9 @@ function mergedHeader(now = Date.now()) {
     github: g ? { generated_at: g.generated_at ?? null, received_at: iso(SRCS.github.at) } : null,
     box: b ? { generated_at: b.generated_at ?? null, received_at: iso(SRCS.box.at), stale } : null,
   };
-  if (b?.board) { setCards(b.board); evalNudges(now); h.board = { ...b.board, cards: cardsView(), source: 'server' }; }
+  const githubBoard = (g?.board && Array.isArray(g.board.cards) && g.board.cards.length) ? g.board : null;
+  const boardSrc = githubBoard || b?.board;
+  if (boardSrc) { setCards(boardSrc); evalNudges(now); h.board = { ...boardSrc, cards: cardsView(), source: 'server' }; }
   const fleet = mergeFleet(g?.fleet, b?.fleet, stale, now);
   if (fleet) { if (b && !stale) evalSilent(fleet, now); h.fleet = fleet; }   // only with a fresh box view (no restart flaps)
   const df = dotsFleet(h.fleet, now); if (df) h.fleet = df;
@@ -624,12 +626,14 @@ function startCollector() {
   const env = { PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', HOME: path.join(DATA_DIR, 'home'), LANG: 'C.UTF-8',
     TZ: 'America/Chicago', PYTHONDONTWRITEBYTECODE: '1', LIVE_MODE: 'github', LIVE_NO_CHECKS: '1', GH_TOKEN: tok,
     LIVE_MESH_SRC: path.join(COLLECTOR_DIR, 'upstream'),
-    LIVE_HEALTH_URLS: process.env.COLLECTOR_HEALTH_URLS || 'https://dev.example.com/health https://app.example.com/health' };
+    LIVE_HEALTH_URLS: (process.env.COLLECTOR_HEALTH_URLS || '').trim() };
   if (process.env.GITHUB_HOLD_LABEL) env.GITHUB_HOLD_LABEL = process.env.GITHUB_HOLD_LABEL;
   if (process.env.NO_NUDGE_REPOS != null) env.NO_NUDGE_REPOS = process.env.NO_NUDGE_REPOS;
   for (const k of ['UPSTREAM_REPO', 'UPSTREAM_PINNED', 'UPSTREAM_REPOS', 'XRAY_REPO', 'XRAY_OURS', 'SEAT_PRESENCE']) if (process.env[k] != null) env[k] = process.env[k];
+  if (process.env.LIVE_FLEET_SEATS != null) env.LIVE_FLEET_SEATS = process.env.LIVE_FLEET_SEATS;
+  const healthArg = env.LIVE_HEALTH_URLS.split(/\s+/).filter(Boolean)[0] || '';
   const args = ['-B', '-u', path.join(COLLECTOR_DIR, 'live_mesh.py'), '--out', GH_FEED, '--watch', process.env.COLLECTOR_WATCH_S || '45',
-    '--repos', ...COLLECTOR_REPOS, '--deploy-repo', '', '--health', 'https://dev.example.com/health'];
+    '--repos', ...COLLECTOR_REPOS, '--deploy-repo', '', '--health', healthArg];
   const child = spawn('python3', args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
   collector.pid = child.pid;
   console.log(`collector: started pid ${child.pid}`);

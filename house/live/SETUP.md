@@ -3,9 +3,10 @@
 ## Pieces
 - **Railway server** (`app/server.mjs`, service `live-mesh`): the page, the merged feed, and the **source of truth** for
   seat inboxes, cards and nudges (volume `/data/live/`: `inbox/<seat>.jsonl`, `cards.json`, `nudges.jsonl`).
-- **Box feed pass + pusher** (`feed/`, released with `feed/release.sh`): builds events and the card model and
-  pushes them (`POST /ingest[/delta]`, header `board` = cards), routes seat inbox lines and posts them
-  (`POST /inbox`). Locally it keeps only a ring buffer (`$MESH_RUN/feed/inbox-spool/<seat>.jsonl`, 300 lines a seat)
+- **Host collector** (`LIVE_MODE=github`): builds the board from GitHub events. The page shows those cards when that board is non-empty.
+- **Box feed pass + pusher** (`feed/push_to_host.sh`, released with `feed/release.sh`): pushes box events
+  (`POST /ingest[/delta]`). A box `board` is used only when the host board has no cards. Env: `LIVE_HOME`, `MESH_RUN`, `FEED`.
+  Locally it keeps only a ring buffer (`$MESH_RUN/feed/inbox-spool/<seat>.jsonl`, 300 lines a seat)
   for when the server can't be reached.
 
 ## Seat auth
@@ -17,7 +18,7 @@
 Keys live only on the box: `$SEAT_KEYS_DIR/<seat>.key` (default `/srv/live/run/secrets/seat-keys`; dir 0700, files 0600). The
 server holds only their SHA-256 hashes, in the Railway variable `SEAT_KEYS` (JSON `{seat: sha256hex}`).
 Rotate: `feed/seat_keys.sh mint` (writes new keys, never prints them) then `feed/seat_keys.sh publish` (sets
-`SEAT_KEYS` on Railway) and deploy with `app/deploy.sh`.
+`SEAT_KEYS` on Railway) and deploy with `app/deploy.sh`. Seat list: `SEAT_KEYS_SEATS` or `SEATS_JSON`. Service and deploy dir: `LIVE_RAILWAY_SERVICE`, `MESH_APP_DEPLOY_DIR`.
 
 | builder-cloud | a per-seat key (file `seat-keys/builder-cloud`, no `.key` suffix), seat display `Builder-cloud`: the cloud Builder. `POST /activity` (as `Builder-cloud`, own board node), `GET /inbox/builder-cloud` = every Builder line (merge-ready, Reviewer PASS) mirrored server-side + nudges to Builder (`type: nudge`), `GET /cards?seat=builder-cloud` = Builder's cards. Helper: `tools/builder-cloud-setup.sh` (key from env `LIVE_KEY`) |
 | assistant | a per-seat key, **write-only**: `POST /emit` only (no inbox / cards). Used by the Example MCP server (env `LIVE_KEY`) |

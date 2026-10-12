@@ -516,3 +516,29 @@ class LabWorkTest(unittest.TestCase):
                 self.assertFalse(f.fleet_state([], t + 121)["seats"]["Tester"]["working"])
             finally:
                 idle.kill(); idle.wait()
+
+
+class FleetSeatsConfig(unittest.TestCase):
+    def test_list_replaces_the_counted_seats(self):
+        seats, fold, board = live_fleet.load_seat_config('["Alpha","Beta"]')
+        self.assertEqual((seats, fold, board), (["Alpha", "Beta"], {}, ["Alpha", "Beta"]))
+        old = live_fleet.SEATS, live_fleet.BOARD, live_fleet.BOARD_SEATS
+        live_fleet.SEATS, live_fleet.BOARD, live_fleet.BOARD_SEATS = seats, fold, board
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                f = live_fleet.Fleet(Path(d) / "state.json", CT)
+                now = time.time()
+                ev = {"src_file": "github-api", "from": "Alpha", "t_ct": datetime.fromtimestamp(now, CT).isoformat()}
+                fs = f.fleet_state([ev], now=now)
+            self.assertEqual(fs["total"], 2)
+            self.assertEqual(list(fs["seats"]), ["Alpha", "Beta"])
+            self.assertTrue(fs["seats"]["Alpha"]["active"])
+            self.assertFalse(fs["seats"]["Beta"]["active"])
+        finally:
+            live_fleet.SEATS, live_fleet.BOARD, live_fleet.BOARD_SEATS = old
+
+    def test_bad_json_keeps_the_example_list(self):
+        seats, fold, board = live_fleet.load_seat_config("{not json")
+        self.assertEqual(board, ["Builder", "Builder-cloud", "Reviewer", "Tester", "QA", "Operator", "Coord"])
+        self.assertEqual(fold, {"QaOne": "QA", "QaTwo": "QA"})
+        self.assertIn("QaOne", seats)

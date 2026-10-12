@@ -1,5 +1,5 @@
 """Unit tests for the Example adapter (stdlib, no network). Run: python3 -m unittest -v tests/test_collect.py"""
-import json, os, sys, tempfile, threading, time, unittest, http.server
+import json, os, subprocess, sys, tempfile, threading, time, unittest, http.server
 from pathlib import Path
 HERE = Path(__file__).resolve().parent
 FEED_DIR = Path(os.environ.get("MESH_FEED_DIR", HERE.parent / "feed"))
@@ -229,3 +229,52 @@ class AuthExpiryTest(unittest.TestCase):
             self.assertEqual(cm.exception.code, live_mesh.EXIT_REMINT)
         with mock.patch.dict(os.environ, {"LIVE_TOKEN_MINTED": str(int(time.time()) - 60)}):
             live_mesh.token_check()   # fresh: no exit
+
+
+class StoredNodeMap(unittest.TestCase):
+    """A LIVE_NODE_MAP change relabels events already in the store."""
+
+    def test_stored_actor_follows_current_map(self):
+        code = (
+            "import json,sys,tempfile; from pathlib import Path; sys.path.insert(0,%r); import live_collect as c\n"
+            "d=Path(tempfile.mkdtemp()); (d/'app.json').write_text(json.dumps({'events':{"
+            "'x':{'id':'x','from':'Others','to':'GitHub','actor':'my-builder[bot]','src_file':'github-api'},"
+            "'y':{'id':'y','from':'Others','to':'GitHub','author':'stranger','src_file':'github-api'},"
+            "'z':{'id':'z','from':'GitHub','to':'Example','actor':'my-builder[bot]','src_file':'github-api'},"
+            "'w':{'id':'w','from':'Builder','to':'GitHub','author':'my-builder[bot]','src_file':'github-api'}}}))\n"
+            "class FF: CT=None\n"
+            "rc=c.RepoCollector('acme-org/app', d, FF(), lambda m: None)\n"
+            "print(rc.ev['x']['from'], rc.ev['y']['from'], rc.ev['z']['from'], rc.ev['w']['from'])"
+        ) % str(FEED_DIR)
+        env = dict(os.environ, LIVE_NODE_MAP='{"my-builder[bot]":"Maker"}')
+        out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(out.stdout.split(), ["Maker", "Others", "GitHub", "Maker"])
+
+
+class GithubModeBoard(unittest.TestCase):
+    def test_github_mode_builds_board_from_events(self):
+        code = (
+            "import os,sys,tempfile; from pathlib import Path\n"
+            "os.environ['LIVE_MODE']='github'; os.environ['GH_TOKEN']='t'\n"
+            "sys.path.insert(0,%r)\n"
+            "import live_mesh\n"
+            "ev={'id':'1','t_ct':'2026-10-12T10:00:00-05:00','from':'Builder','to':'GitHub','kind':'pr_open',"
+            "'direction':'internal','label':'opened','source':'https://github.com/acme-org/app/pull/1',"
+            "'src_file':'github-api','repo':'acme-org/app','number':1,'title':'ship','pr_state':'open'}\n"
+            "class Col:\n"
+            "    def __init__(self):\n"
+            "        self.ev={'1':ev}; self.st={'prs':{},'gaps':{}}\n"
+            "    def run(self,c,deadline):\n"
+            "        return True\n"
+            "live_mesh.COLLECTORS['acme-org/app']=Col()\n"
+            "live_mesh.uc.open_numbers=lambda *a, **k: {}\n"
+            "class A:\n"
+            "    repos=['acme-org/app']; health=None; health_every=60; health_state='/tmp/unused-health.json'\n"
+            "A.out=str(Path(tempfile.mkdtemp())/'github-events.json')\n"
+            "feed=live_mesh.build(A(), None)\n"
+            "print(any(c.get('number')==1 for c in (feed.get('board') or {}).get('cards') or []))\n"
+        ) % str(FEED_DIR)
+        out = subprocess.run([sys.executable, "-c", code], env=dict(os.environ), capture_output=True, text=True)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(out.stdout.strip(), "True")
