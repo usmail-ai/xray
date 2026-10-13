@@ -20,6 +20,10 @@ xray/inference/
 .opencode/xray/
 
 # Temp files
+__pycache__/
+*.pyc
+fleet/activity.jsonl
+fleet/inbox/
 *.log
 *.out
 rerun-*/
@@ -132,3 +136,4 @@ test-results/
 playwright-report/
 tests/config/coverage/
 tests/config/test-results/
+house/live/**/__pycache__/

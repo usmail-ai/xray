@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+"""live-inbox <seat> [--peek] | live-inbox <seat> --ack <id|all> | live-inbox <seat> --pop <id|all>
+
+Read: OPEN lines from the Bifrost server inbox for <seat>, one JSON object per line on stdout. The server hides lines the
+seat acked and lines whose card moved past the seat's step (closed card; for reviewer, a Reviewer verdict at the card's head).
+A read never acks. The ack is the receipt (the pop) and a seat sends it after it handles the line, with
+--ack or --pop <id> (one line) or --ack all / --pop all (everything open). --peek means the same as a plain read.
+The local cursor still advances to the newest line seen.
+Key: /srv/live/run/secrets/seat-keys/<seat>.key (never printed). Cursor:
+/srv/live/run/fleet/cursors/<seat>.txt."""
+import json, os, re, sys, urllib.error, urllib.parse, urllib.request
+from pathlib import Path
+URL = os.environ.get("LIVE_URL", "https://live.example.com").rstrip("/")
+KEYS = Path(os.environ.get("SEAT_KEYS_DIR", "/srv/live/run/secrets/seat-keys"))
+CUR = Path(os.environ.get("LIVE_CURSORS", "/srv/live/run/fleet/cursors"))
+argv = sys.argv[1:]
+ack = None
+for flag in ("--ack", "--pop"):
+    if flag in argv:
+        i = argv.index(flag)
+        if i + 1 >= len(argv):
+            sys.exit("usage: live-inbox <seat> --ack <id|all>")
+        ack = argv[i + 1]; del argv[i:i + 2]
+        break
+args = [a for a in argv if not a.startswith("--")]
+if len(args) != 1 or not re.fullmatch(r"[a-z0-9-]{2,16}", args[0]):
+    sys.exit("usage: live-inbox <seat> [--peek] | live-inbox <seat> --ack <id|all>")
+seat = args[0]
+kf = KEYS / f"{seat}.key"
+if not kf.is_file():
+    sys.exit(f"no key for seat {seat!r} (builder reads with its builder-app token on its own Mac)")
+H = {"Authorization": "Bearer " + kf.read_text().strip()}
+
+
+def call(method, path, body=None):
+    req = urllib.request.Request(URL + path, data=json.dumps(body).encode() if body is not None else None, method=method,
+                                 headers={**H, **({"Content-Type": "application/json"} if body is not None else {})})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        sys.exit(f"live-inbox: HTTP {e.code} {e.read().decode()[:200]}")
+    except (urllib.error.URLError, TimeoutError) as e:
+        sys.exit(f"live-inbox: server unreachable ({e})")
+
+
+if ack is not None:
+    r = call("POST", f"/inbox/{seat}/ack", {"all": True} if ack == "all" else {"id": ack})
+    print(json.dumps(r))
+    sys.exit(0)
+cf = CUR / f"{seat}.txt"
+lines = call("GET", f"/inbox/{seat}").get("lines") or []
+for l in lines:
+    print(json.dumps(l, ensure_ascii=False))
+if lines:   # remember the newest line seen; the ack stays explicit
+    CUR.mkdir(parents=True, exist_ok=True)
+    tmp = cf.with_suffix(".tmp"); tmp.write_text(lines[-1]["id"] + "\n"); os.replace(tmp, cf)

@@ -42,6 +42,23 @@ The format is based on [Conventional Commits](https://www.conventionalcommits.or
 - Archive root `integrations/` costume SKILL dump → `docs/archive/integrations-costume/`. Live wear is `src/integrations`.
 - Archive root `commands/` stale copy → `docs/archive/commands-copy/`. Live wear is `src/opencode/commands`.
 
+## [4.0.43] - 2026-10-12
+
+### 🔄 Changes
+
+### 🐛 Bug Fixes
+- fix: stop the vendored complete-todo command from minting PASS (39c88c8fa)
+- fix: bind Confer receipts to a synthesis cycle (5134c5d05)
+- fix: treat ambiguous Confer text as UNREVIEWED (06acc24f1)
+- fix: complete Confer only on a real approve (8776562d7)
+- fix: parse only the first Confer DECISION token (c06747d95)
+- fix: keep Confer off unless it is explicitly enabled (8cd356c24)
+
+### 🧪 Tests
+- test: lock no-LLM confer votes out of a PASS merge (e30628fef)
+
+---
+
 ## [4.0.41] - 2026-10-07
 
 ### 🔄 Changes

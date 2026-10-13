@@ -4,7 +4,25 @@ How the roles work. Read this first. Who you are, where you post, and which repo
 
 - **Coordinator never:** deploy, publish a package, change production, launch a cloud agent, post in public, spend, or merge. The implementer merges after the gate.
 - **Roles:** The seat field is the role, not a personal name. Code, pull requests, cloud work, deploys, and package publish = **implementer**. Shipping after review = **publisher**. Ship, live, security, and identity review = **reviewer** (a short note, no merge). Public posts, listings, and audio are optional **specialists**. The coordinator is also called CoS. Money, credentials, and deletes = the **human owner**. **New seat before any ship work:** clear role description; fasten suit (mill+inspect) with inspect receipt on disk (`ok: true`, suit fastened, costume false); orientation + KB (role card, scope, grow mem from receipts); seat reads KT/orientation and acks before first carded job; if role was announced publicly, standing ROLE board card matching the announcement; CoS cards first work — seat quiet until carded. A chat packet alone is not a suit.
-- **Packet (every handoff):** goal, constraints, path, acceptance, evidence, next owner, escalate. A chat ping is not a card. Seven fields always, one line when the job is short. A card is one ticket. The station is the survival strip. A beat is a real event. An idle loop on parked work is theater. Wake on a PR, a person, or a compact.
+- **Card:** one GitHub issue or pull request (`repo#number`). Fields: title, url, owner seat, stage (`open` > `review` > `fix` > `merge` > `retest` > `done`), and state (`live`, `parked`, or `closed`). A chat ping is not a card.
+- **Packet:** the card's seven fields — goal, constraints, path, acceptance, evidence, next owner, escalate. They come from a `## Packet` block in the issue or pull request body, or from one line. Each field is at most 200 characters, and links are allowlisted. If acceptance or next owner is missing, the card is amber with a `no packet` badge. Evidence fills from the latest beat.
+- **Handoff = packet + wake.** Every handoff to a seat is two things: (1) the packet on that seat's Bifrost board inbox, which is the tracked record (ack, board, nudges); (2) a one-line message through the fleet's own internal messaging that points to the packet, which is the wake. Never one without the other. A webhook is the wake only when a fleet has no internal messaging.
+- **Beat:** one real event — a pull request opened or pushed, a review verdict, a CI result, a merge, a merge-queue tick, an owner message, or a blocker. A watcher run whose start and end fall in the same second is never a beat. An idle loop on parked work is theater. The station is the survival strip. Wake on a PR, a person, or a compact.
+
+Packet template:
+
+```
+## Packet
+- goal:
+- constraints:
+- path:
+- acceptance:
+- evidence:
+- next owner:
+- escalate:
+```
+
+One line, when the job is short: `goal: … · constraints: … · path: … · acceptance: … · evidence: … · next owner: … · escalate: …`
 - **Done** = a live receipt (a URL, a registry view, a GitHub Release URL, or reviewer PASS). Green CI is only gate A. Gates: A CI green, B the pack installs, C the docs match, D published and proven live (fresh install and upgrade, annotated tag pushed, GitHub Release so Latest flips). A pushed tag alone is FAIL for gate D. A chat "looks good" is not done.
 - **Review:** Light and Normal = implementer + CI. Strict only for ship, live, security, or identity. Doc copies = Normal. If the reviewer fails it, the implementer fixes the same PR and the reviewer looks again, until PASS or HOLD. HOLD means the human.
 - **Disk, not chat.** After compact: read the station, then the board, then memory, then resume the same role. Don't start a second copy. Read `house/WAVEBOARD.md` and `house/ATTENTION_STATE.md` first; if missing, use `templates/house/`. No board file means the board is theater.
@@ -13,7 +31,7 @@ How the roles work. Read this first. Who you are, where you post, and which repo
 
 | Rule | What to do |
 |---|---|
-| Clouds + churn | Heavy multi-file code only. One cloud per track. [CLOUD-CONTINUITY.md](https://github.com/0xRayAI/xray/blob/main/grok-bot/ops/CLOUD-CONTINUITY.md). |
+| Clouds + churn | Heavy multi-file code only. Cloud work goes as a follow-up to the existing cloud agent session that holds the context; log its id on the Card. Launch a new agent only when (a) no session has context for that repo, or (b) **all three** hold: the context-holding agent already has 2+ jobs queued, the new job touches different files, and the job can be briefed from the docs alone. Otherwise, queue it as a follow-up on the existing session. [CLOUD-CONTINUITY.md](ops/CLOUD-CONTINUITY.md). |
 | Branch + PR always | Pull first, branch from fresh origin/main, rebase before merge, never commit on main. Roll back by closing the PR or reverting. |
 | Coding discipline | Stay on task, no stubs, surgical edits, YAGNI, stop at acceptance. |
 | npm | CLI auth, no OTP in chat, poll until live. Not done until both: an annotated tag `vX.Y.Z` pushed on the published commit, and a GitHub Release for that tag so Latest flips. A pushed tag alone is FAIL. The ship receipt includes the release URL. Railway after npm. [Publish](skills/ship-ready-mill-gate/SKILL.md). The implementer drafts the notes from CHANGELOG in the same pass as npm. The reviewer friend-tests them (plain words a builder would hear). The human owner publishes the Release (or an explicit GO). Title: `vX.Y.Z — <short friend line>`. The body is a real Release, not a tag annotation. ## What's new — 3–7 plain bullets from CHANGELOG (shipped user/builder value only). ## Who it helps — one short line (builders / suit wearers / …). ## How to get it — npm + tag + link to full CHANGELOG. ## Breaking / notes — only if real; omit the section if empty. Banned: one-liners / stub bodies ("wear-gated tarball only", "see CHANGELOG", empty); gate jargon (Kind 0, calling, organ, worn, OP-PROC internals); Dist/X voice, hype, emojis-as-substance; inventing features not in CHANGELOG. |

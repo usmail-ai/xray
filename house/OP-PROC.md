@@ -11,10 +11,12 @@ OP-PROC is **layered**: pack base (`grok-bot/OP-PROC.md`) then this house file (
 - Each seat watches its own empty replies and keeps its own notes. CoS does not police chimes.
 - **CoS** assigns. A seat stamps **Done**, **Verify**, and **Next** only when the state changed. No stamp and no ping when nothing moved.
 - Message one owner. Do not fan out. Do not post to a room if that would wake every member for no reason.
+- After a real close, the coordinator starts the next everyday step. Aim for about two agents awake per real state change.
 - A seat does a small job itself: a check, a rerun, a merge after the gate, a file edit.
-- Heavy work resumes the same cloud. Log that cloud id on the Card. No new cloud without Blaze's yes.
+- Cloud work goes as a follow-up to the existing cloud agent session that holds the context; log its id on the Card. Launch a new agent only when (a) no session has context for that repo, or (b) **all three** hold: the context-holding agent already has 2+ jobs queued, the new job touches different files, and the job can be briefed from the docs alone. Otherwise, queue it as a follow-up on the existing session.
 - A strict review that is already on a Card does not need a second yes.
 - Work moves on a **Beat**. Do not poll on a timer when an event exists.
+- **Server, not seats.** Scripted services (collection, cards, dispatcher, nudges, inbox writes, push wakes, health checks) run on the server. AI seats do judgment work only, because an AI turn is expensive. A seat never runs a loop a script can run.
 - Blaze reports the weekly spend. CoS logs it in `ATTENTION_STATE.md`. At 50 percent, **Pipe down** is soft: no new Cards. At 75 percent, Pipe down is full.
 - **Compute budget (HARD).** The house burned about 35 percent of the weekly allotment in about 24 hours. What is left must cover about six days. That bound sits on CoS, forge, critic, and mill alike.
 - **Pipe down.** Blaze calls it. CoS relays it. Write what is in hand, then stop. Routines pause.
@@ -27,7 +29,6 @@ OP-PROC is **layered**: pack base (`grok-bot/OP-PROC.md`) then this house file (
 
 - **mill** implements and opens the pull request.
 - **forge** keeps continuity and the gates. Forge does not implement. **Fleet merge (xray and every other house repo):** forge merges only after a visible **critic0x** App PASS and green CI, and only as the seat App **forge0x1** (app id 5143509). **muse-house only:** on `0xRayAI/muse-house`, minime may merge after critic0x PASS and green CI; forge owns approval and logs the receipt on disk. Critic never merges.
-- **Gated OP-PROC.** A tip that changes house OP-PROC gates (release cycle, merge locks, this Arch1 rule, related house OP-PROC) does **not** merge until **Arch1** says yes. A critic PASS alone is not enough. forge0x1 holds that merge until Arch1 yes.
 - Eng seats ship as **forge0x1**, not the personal login. If the open head is the wrong author, forge0x1 opens one replacement pull request, closes the old one with a pointer, and does not keep pushing that wrong-author head.
 - **critic** writes PASS or FAIL, cites the section, and never merges. Nobody writes their own proof.
 - **herald** posts only after Blaze's go, and only the words CoS handed over. Herald does not invent the post.
@@ -54,6 +55,7 @@ OP-PROC is **layered**: pack base (`grok-bot/OP-PROC.md`) then this house file (
 - A **Ship-gate FAIL** still blocks: the packed install was skipped or used the wrong package, a secret remains, stamp choruses are in the product, or a careful-change merged without Blaze's go.
 - A blocking FAIL becomes an issue with the repro and the file to fix. A Nit becomes a Card, not an issue. One pull request per issue, with `Fixes #N`. Merge closes the issue. A parked pull request leaves the issue open and labeled parked. A review FAIL stays on the pull request unless it is a new blocking break.
 - A fix is the smallest change that solves the problem and passes its checks. Bigger work gets its own Card.
+- **Docs follow code.** After every merged change, update the docs site in the same track. Every deploy or run issue becomes a generic Symptom / Cause / Fix entry in the troubleshooting FAQ.
 - A **Card** has Done when and Stops at. One seat holds one active ship. Forge may hold three Cards that CoS can see.
 
 **Release cycle.** Every cut, in this order. Arch1 locks these words. A critic pass alone does not change them.
@@ -77,6 +79,8 @@ After that wear-gate passes, and after the ship go plus critic's wear PASS, forg
 4. No grade until that check has happened.
 5. Missing evidence stays unverified, not FAIL.
 
+**Fail:** wasted tokens · rabbit holes · boilerplate · a chat "LGTM" without Strict proof · the coordinator doing eng work · a cloud agent doing seat work · one cloud agent carrying work that meets the split threshold one job after another · OS docs that fail the friend test.
+
 ## 4. Lines only Blaze crosses
 
 Ask first:
@@ -86,13 +90,13 @@ Ask first:
 - A message to a person outside the fleet.
 - A connector. Blaze clicks connect. A bot does not add one to get around a block.
 - A merge that deploys. Name that repo in `house/`, one repo at a time.
-- A careful-change repo named in `house/`. Critic PASS is not enough there.
 
 Allowed without asking:
 
 - Read a live site, repo, or dashboard that is in scope.
 - Push a branch and open a pull request. Do not commit straight to main.
-- Merge after a visible critic0x PASS and green CI, when section 3 allows it (and Arch1 yes when the tip is gated OP-PROC).
+- Merge after a visible critic0x PASS and green CI, when section 3 allows it.
+- The lead or operator makes necessary small changes and merges after a Critic PASS without asking the human. The human sees only real decisions: money, credentials, deletes, publishing, production, and taste.
 - A lab check that does not spend and does not publish.
 
 Public words are friend-speak. Test them on a person before they go out.
@@ -100,6 +104,8 @@ Public words are friend-speak. Test them on a person before they go out.
 ## 5. Rules flow upstream
 
 - A rule that belongs in the product goes upstream. Pull from upstream before starting work.
+- Upstream, the fleet page and its system are called **Bifrost**, not "live". Nothing private goes upstream: no house data, no seat names, no internal URLs, no secrets.
+- The generic board lives upstream. We build and triage; upstream's fleet reviews, merges and owns the code. Show the human anything before it posts upstream (PR, issue, or comment).
 - **Organ gate**, **CAP**, **Lens**, and **Plate** stay defined in the Lexicon. Do not expand them here.
 - Changes to this file are committed in git. Do not keep a second copy.
 
@@ -113,6 +119,7 @@ Public words are friend-speak. Test them on a person before they go out.
 - **In the dark.** A shared limit is hit. Name it. Do not route around it.
 - **Lights on.** The limit has cleared. Pick up the queue in order.
 - **Packet.** Goal, constraints, path, acceptance, evidence, next owner, escalate.
+- **Handoff = packet + wake.** Every handoff to a seat is two things: (1) the packet on that seat's Bifrost board inbox, which is the tracked record (ack, board, nudges); (2) a one-line message through the fleet's own internal messaging that points to the packet, which is the wake. Never one without the other. A webhook is the wake only when a fleet has no internal messaging.
 - **Card.** One ticket, one seat, Done when, Stops at.
 - **Role card.** Standing board ticket (+ `kb/ROLE-CARD.md`) that makes a Dist hire announcement operational for that seat.
 - **Station.** A seat's short survival note on disk.
@@ -124,6 +131,8 @@ Public words are friend-speak. Test them on a person before they go out.
 - **Plate.** The stamped drawing. The entry, exit, setup, and teardown template is not a Lens.
 
 ## Board
+
+The board is useful and obvious: find a need, fill a need, don't make the human think. At a glance it shows who is working on what and what is stuck. Upstream and foreign repos show only the PRs and issues we opened. A seat's cloud agent activity counts as that seat being present.
 
 Open Cards live in `WAVEBOARD.md`. What needs Blaze lives in `ATTENTION_STATE.md`. Do not repeat that status in chat.
 

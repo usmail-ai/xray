@@ -21,6 +21,7 @@ Churn is waste: a second cloud on the same track, a twin reviewer, redoing work 
 2. Genuinely new outcome → launch new.
 3. One cloud per ship track unless work is truly independent.
 4. Before launch: list recent clouds; resume if lineage exists.
+5. **Split threshold.** Cloud work goes as a follow-up to the existing cloud agent session that holds the context; log its id on the Card. Launch a new agent only when (a) no session has context for that repo, or (b) **all three** hold: the context-holding agent already has 2+ jobs queued, the new job touches different files, and the job can be briefed from the docs alone. Otherwise, queue it as a follow-up on the existing session.
 
 ## Handoff (HARD — 2026-09-14)
 **Implementer (forge) owns every eng cloud.** Launch · resume · reply · dump · continuity.

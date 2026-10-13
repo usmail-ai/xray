@@ -1,0 +1,239 @@
+# Burst watcher playbook
+
+End-to-end install: [SETUP.md](SETUP.md). This page is the watcher list and the fixes log.
+
+Burst is the live activity network. A packet is one event. Spectrum is the page
+(`docs-site/static/live`) replaying the feed; the center node reads `LiveMesh.HUB_LABEL`
+(`Burst`). Working is a light under a seat icon. It is not a packet and it is not
+counted in N of M.
+
+Privacy for every watcher: ids, times, and counts. No command lines, env, file names,
+file contents, comment bodies, or commit messages in the working store. The lab-run
+store is one time per seat.
+
+## Active vs working
+
+| | Counted in N of M | What lights it |
+|---|---|---|
+| Active | yes | a GitHub event, owned-file mtime, prompt, or activity line within 15 min |
+| Working | no | the signals below |
+
+The fleet line on the page counts seats that have a packet in flight. A working-only
+seat stays out of that count.
+
+## LIVE vs behind
+
+`generated_at` age ≤ 90s → the pill says **LIVE**. Older than that → **behind N min**
+(`max(1, round(age/60))`). The pill is feed freshness. Rewound playback stays on the
+timeline, not in the pill.
+
+## Watchers
+
+| Watcher | Source | Cadence | Emits | Privacy | How a seat plugs in |
+|---|---|---|---|---|---|
+| GitHub collector | host process next to the page (`fetch_feed.py`) | every `--watch` pass | packets: PR open/update, reviews, comment metadata, merges, pushes | ids, times, status words; no commit message on branch-tip pushes | host variable `GITHUB_READ_TOKEN`. See "Hosted collector" |
+| Branch tips | `branch_tip_events` inside the same pass | every pass, not after a backfill gate, any branch except `live-wire` | packet `push` | branch name, short sha, author login, committer time. The commit message is not stored | nothing extra |
+| PR opens | `pr_events` on the pulls list | every pass, any base branch | packet `pr_open` | existing feed fields | nothing extra |
+| GitHub-check working | Actions runs/jobs and commit statuses (Checks is not on a fine-grained token) | every pass | working, not a packet | one until-time per author seat | automatic for a PR the seat authored |
+| /health | `probe` in `fetch_feed.py` | `--health-every` (default 60s), emit on status change | packet `health_ok` / `health_fail` | HTTP status code and time. The body is not read | `--health URL` |
+| Lab-run working | `house/burst/working.py` | every collector pass when `BURST_LABS` is set | working, not a packet | one until-time per seat. Mtimes, cwd, and CPU time only | `BURST_LABS` JSON: `[{seat, runs, folders}]` |
+| Seat activity | `fleet/activity.jsonl` and `POST /activity` | one line at the start of real work, one line at the end | working while a start has no end, cap 60 min. Not a packet. A watcher tick with no live work writes nothing | names and times only. No prompt or message text | Same object. `seat` is optional on the post and must match the installation token, case-insensitive, or the post is 403 `seat mismatch`. The stored seat is the token's seat |
+| Railway deploys | the seat writes a status file; the collector does not call Railway | seat poll 180s | packet only if the seat maps a status change into the feed | id, status word, time | keep project ids in the seat's own config, not in this repo |
+| House board and merge queue | files the seat already writes | every collector pass when the seat points at them | counts and card ids | ids, status words, counts | not a second copy of the house tree |
+| prompts.jsonl | a SENT pulse on the seat's prompt log | every pass the file is present | working for 10 min after SENT. Not a packet | display name resolved through seats aliases. No prompt text | `BURST_PROMPTS` (default `fleet/prompts.jsonl`). Line: `{t_ct, seat, kind: prompt, action: sent}`. Legacy `{t_ct, from, to}` pulses the `to` seat. `Chief of Staff` → `CoS`, `Lab Tester: Chaos` → `Chaos` |
+| cloud-agents.jsonl | tail the seat's log | every pass the seat runs | activity lines | names, times, ids. No message text | a line that passes `validActivity` with `kind` `cloud_agent` |
+| POST /activity | `house/burst/activity.mjs` | one post at the start of a turn, a subagent, or a watcher that found work; the matching end closes it | one stored line | strict short fields; seat comes from the verified token | the seat's own GitHub App installation token |
+| Laptop repo watcher | the seat's scheduled check, off the house box | every 10 min | nothing when idle, except one watcher `end` if the last watcher line is an open start. When there is work: watcher start, the check, matching end | ids, times, counts. No command lines | `house/burst/bin` first on `PATH`. See "Watchers: log only real work" |
+| Supervisor | `house/burst/supervise.py` | restarts when the feed exits; re-mint at 50 min of wall time | process start, exit 75 | no tokens in logs | `BURST_TOKEN_MINTED` from `date +%s` |
+| Watchdog | the same restart loop | about 60s | start the feed again if it died | none | `run()` until the stop file exists |
+| Delta pusher | `house/burst/push.sh` + `push-delta.mjs` | one post while the lock is held, then sleep 2s | one delta to the ingest | local activity lines already written | secret is the `X-Burst-Ingest` header; a 409 posts once more |
+| Pages tripwire | `house/live-mesh/tripwire_push.py` | 300s | `feed_push` when the public snapshot changes | existing feed | unchanged |
+| Seat inbox | `house/burst/inbox.py` inside the feed pass | every pass, one line per new event id | `fleet/inbox/<seat>.jsonl` | id, time, seat, type, repo, number, sha, title, url, reason. No bodies | read the inbox first and keep a cursor. See "Seat inboxes" |
+
+### Lab-run working (live rule)
+
+A seat is working when either:
+
+- any **file** under its run folders changed in the last **150s** (mtimes only; skip directories named `node_modules` and `.git`), or
+- a process whose cwd is inside the seat's lab folders used **≥ 1s CPU** since the previous pass. That light stays **120s**.
+
+The first CPU sample is a baseline only. Folder mtime is not the signal: it changes on add/remove, and a test stretch writes no new files. The store is one until-time per seat.
+
+### GitHub-check working
+
+A running, queued, or failing check on a PR the seat authored, newer than that PR's last merge, within 30 minutes. Success does not light working.
+
+### Fail-safe working
+
+A seat is working for **10 minutes** after any `prompts.jsonl` line pulses it `SENT`, or while an `activity.jsonl` start has no later end for the same seat, kind, and tag, for at most **60 minutes**. A lone open start expires at that cap: the feed drops it once start + 60 minutes is no longer in the future. Display names resolve through the seats config `aliases` (`Chief of Staff` → `CoS`, `Lab Tester: Chaos` → `Chaos`). The feed field `fleet.missing_activity` lists seats that pulsed in the last 60 minutes and have no activity line in that window. The page does not read that list.
+
+### Watchers: log only real work
+
+A watcher is a scheduled check, for example every 10 minutes. Each run looks first, and it does not write while it looks.
+
+Live work is any of these:
+
+- a cloud agent or subagent still running, including a desktop or browser run (`computerUse`)
+- a pull request or queue item this seat owns that is waiting on CI or a verdict
+- a prompt that has not been answered
+
+If none of those are true, write nothing. If this seat's last watcher line is an open `start` (no later `end` with the same tag), write one `action` `end` and stop. An idle tick must not pulse. That pulse is a false working light.
+
+If there is work, write a watcher start, do the check, then write the matching end. The same seat also logs `kind` `turn` at the start and end of each user turn, and `kind` `subagent` at the start and end of every subagent, including a desktop or browser (`computerUse`) run.
+
+Routine prompt:
+
+```
+Every 10 minutes, before you write anything, check whether this seat has live work: a running cloud agent or subagent (including a desktop or browser computerUse run), an owned pull request or queue item waiting on CI or a verdict, or an unanswered prompt. If there is none, write nothing, except one watcher end if your last watcher line is an open start. If there is work, write a watcher start, do the check, then write the matching end. Never write a line just because the timer fired. Also log kind turn start and end for each user turn, and kind subagent start and end for every subagent, including computerUse.
+```
+
+Two lines when that check finds work:
+
+```json
+{"t_ct":"2026-10-09T09:02:00-05:00","seat":"builder","kind":"watcher","action":"start","tag":"repos"}
+{"t_ct":"2026-10-09T09:02:30-05:00","seat":"builder","kind":"watcher","action":"end","tag":"repos"}
+```
+
+### Header dot
+
+Chip text, the blinking dot, and the node label read one derived state: **working**, then **active**, then **idle**. The dot blinks only while that state is working. The chip cannot say idle while the dot blinks or the node says working. There is no extra glyph. Working is still outside the fleet count.
+
+### Delta and the page poll
+
+Cursor is `epoch.seq`. A delta whose `base` is not the current cursor is **409** with the current cursor; the client refetches the full feed. `?since` at the current seq is **304**. When the feed carries a cursor, the page polls `live-events.json?since=` every **10s**. The GitHub contents poll stays at 60s so an anonymous viewer does not burn the hourly limit.
+
+### Tokens
+
+Re-mint when wall-clock age reaches 50 minutes (`remint_due`). A **401** raises `AuthExpired`, which is not an `OSError`, so a per-step handler cannot treat it as a dropped connection. The pass does not write, and the process exits **75**.
+
+Installation token shape, before any GitHub call:
+
+```
+/^ghs_[A-Za-z0-9._-]{20,1024}$/
+```
+
+There is no static `ACTIVITY_KEY` fallback. The verdict cache stores `sha256(token)` only.
+
+### Git and gh
+
+`house/burst/bin/gh` forces the read-only plan (a non-read permission exits 2). `git-credential` and `use-repo` take `BURST_BOT_LOGIN` and `BURST_BOT_ID` from the environment. App id and installation id are `GITHUB_APP_ID` and `GITHUB_APP_INSTALLATION_ID`.
+
+### Pusher lock
+
+`push.sh` posts one delta to `BURST_INGEST_URL` while it holds flock on fd 9. The ingest secret is the `X-Burst-Ingest` header. A 409 refetches `BURST_FEED_URL` and posts once more. The script then sleeps with `9>&-`, so a stopped pusher's orphan sleep does not keep the lock.
+
+## Seat inboxes
+
+The feed loop routes each new event id into `fleet/inbox/<seat>.jsonl`. The directory is `BURST_INBOX` (default `fleet/inbox`; the Example collector uses `/srv/live/run/fleet/inbox`). Roles are JSON in [inbox-roles.json](inbox-roles.json) (`BURST_INBOX_ROLES`). The line shape is [inbox.schema.json](inbox.schema.json): `id`, `t_ct`, `seat`, `type`, `repo`, `number`, optional `sha`, `title`, `url`, `reason`. No bodies, prompt text, or secrets. Files keep the last 7 days (`keep_days`).
+
+A watcher reads its inbox first, stores the last id it handled, and still runs its current checks as a backup.
+
+| Seat | File | What arrives |
+|---|---|---|
+| Critic | `critic.jsonl` | new and updated pull requests |
+| Maker | `maker.jsonl` | Critic PASS and green CI on the same head sha |
+| Chaos | `chaos.jsonl` | merges to `develop` |
+| Operator | `operator.jsonl` | Railway deploys and holds, lab issues, and issues or comments that ask for Railway, lab, labtest, or cloud agents, or that mention Operator or ops-app |
+| CoS | `cos.jsonl` | a pull request with no activity for `stall_hours` (default 6), a watcher gap, and anything labeled or mentioning Lead or `needs-decision` |
+
+Only Maker is mirrored. The pusher posts new `maker.jsonl` lines to `BURST_INBOX_URL`. The server answers `GET /inbox/maker?since=<id>` after the same installation-token check as `POST /activity` (the maker seat, bot `maker-app[bot]`). No other inbox is served.
+
+The board is built in the feed pass by `house/live/feed/live_board.py`. There is no separate waveboard builder.
+
+The live page also carries a waveboard split: cards on the left two thirds, the packet and the last five beats on the right third. Narrow screens turn that panel into a toggle. The page does not poll again. The feed pass reads the events it already collected, including a `## Packet` block on an issue or pull request body it already fetched, and the seat inbox files, then stores `waveboard` on the same feed. `WAVEBOARD.md` is rewritten from that model at most once a minute. Items in `waveboard-static.md` stay pinned. A live card with no beat for 60 minutes is a red stall in the coordinator inbox. A closed card drops off after 24 hours. A card missing acceptance or next owner is amber, badge `no packet`.
+
+```
+## Packet
+- goal:
+- constraints:
+- path:
+- acceptance:
+- evidence:
+- next owner:
+- escalate:
+```
+
+Routine prompt:
+
+```
+Read fleet/inbox/<seat>.jsonl first. Keep a cursor: the last id you already handled. Act on each newer line, using title, url, and reason. Then run your current checks as a backup in case a line was missed. Do not write a watcher line when the inbox and the backup are both empty.
+```
+
+Two lines a critic inbox can hold:
+
+```json
+{"id":"org/repo#1:open","t_ct":"2026-10-09T09:00:00-05:00","seat":"critic","type":"pr_open","repo":"org/repo","number":1,"title":"org/repo #1 opened","url":"https://github.com/org/repo/pull/1","reason":"new or updated pr"}
+{"id":"org/repo#1:push:abcdef012345","t_ct":"2026-10-09T09:10:00-05:00","seat":"critic","type":"pr_update","repo":"org/repo","number":1,"sha":"abcdef012345abcdef012345abcdef01234567","title":"org/repo #1 update","url":"https://github.com/org/repo/pull/1","reason":"new or updated pr"}
+```
+
+## Seat on a laptop (off-box seat)
+
+A seat that does not run on the house box uses its own GitHub App. App id, installation id, and the private key stay in that seat's environment. This page does not name them.
+
+Put `house/burst/bin` first on `PATH`, ahead of a system or Homebrew `gh`, so `gh` is the app wrapper.
+
+The installation token is cached and reused until 120 seconds before `expires_at`. The wrapper mints again after that. The shape check is `^ghs_[A-Za-z0-9._-]{20,1024}$`, so a long token that contains `.` and `_` is accepted and sent to GitHub.
+
+Git HTTPS uses `house/burst/bin/git-credential`. The helper answers with that app token. `use-repo` sets the commit identity to the bot: `user.name` is `<app-slug>[bot]`, and `user.email` is that bot's GitHub noreply address. Do not author commits under a human name.
+
+Push the seat's branch with:
+
+```
+git push origin HEAD:<branch>
+```
+
+The seat's watcher runs on a schedule, for example every 10 minutes, and follows [Watchers: log only real work](#watchers-log-only-real-work). A local heartbeat file is not an activity line and does not light working. Log `kind` `turn` at the start and end of each user turn, and `kind` `subagent` at the start and end of every subagent, including a desktop or browser (`computerUse`) run. Do not post on an idle tick.
+
+Forks: the app can push to the org's fork. Opening or merging a pull request on an upstream org needs an admin of that org.
+
+## Hosted collector
+
+Running the GitHub watcher on a laptop or VM made the board go stale whenever that box paused or hung. The GitHub collector now runs on the hosting platform (for example Railway) next to the page. It writes straight into the server's event store.
+
+The box or laptop only pushes local signals: prompt lines, cloud-agent logs, and lab-run mtimes. Those arrive as deltas and are merged by id. If the box is down, GitHub events still flow. Seat state that came from the box shows stale.
+
+### Setup
+
+Create a fine-grained personal access token. In GitHub: Settings → Developer settings → Personal access tokens → Fine-grained.
+
+- Resource owner: your org.
+- Repository access: only the watched repos.
+- Permissions, read-only: Contents, Pull requests, Issues, Actions, Commit statuses. Metadata is included automatically.
+
+Fine-grained tokens have no Checks permission. Check state is derived from Actions runs and jobs, and from commit statuses.
+
+Set the token as the host variable `GITHUB_READ_TOKEN`. Do not put a GitHub App private key on the host: that key can mint write tokens. Do not commit the token. Set an expiry and rotate it.
+
+## Fixes log
+
+1. **Lab-run working looked idle during a test stretch.** Folder mtime changes only when a name is added or removed, and a test stretch writes no files. Working is any file mtime under the run folders in the last 150s (skip `node_modules` and `.git`) or ≥1s CPU in a lab-folder cwd (hold 120s). Read mtimes, cwd, and CPU time only. Store one time per seat. Not counted in N of M.
+
+2. **A seat with a running check looked idle.** Working is a running, queued, or failing check on a PR that seat authored, newer than its last merge, within 30 minutes.
+
+3. **PR opens and branch pushes waited on a backfill and on main.** Every collector pass lists pulls and branch tips. Any branch except `live-wire`. The tip event does not store the commit message.
+
+4. **A paused VM kept a dead token, and a 401 rewrote the feed as fresh.** Re-mint compares `time.time()` values. `AuthExpired` is not an `OSError`. Exit 75. Do not write.
+
+5. **The page refetched the whole feed and could not tell a stale cursor.** Push deltas carry `epoch.seq`. A bad base is 409. `?since` at the current seq is 304. The page polls that every 10s once the feed has a cursor.
+
+6. **Working added a word next to the seat.** The existing header dot blinks in the seat color. The chip text does not change.
+
+7. **Off-box seats could not post.** `POST /activity` verifies that seat's GitHub App installation token (bot login, bot id, and org) and stores one strict line. No static key.
+
+8. **Real installation tokens got 401 before GitHub was asked.** The shape check was `ghs_[A-Za-z0-9]{20,255}`, which rejects `.` and `_` and anything longer than 255. Live tokens are ~380 characters and contain both. The check is `^ghs_[A-Za-z0-9._-]{20,1024}$`.
+
+9. **A stopped pusher left the lock held.** `sleep` runs with fd 9 closed (`9>&-`).
+
+10. **The board went stale when the laptop or VM paused or hung.** The GitHub watcher ran on that box, so a pause stopped every GitHub event. The collector now runs on the host next to the page and writes into the server's event store. The box only pushes local signals (prompts, cloud-agent logs, lab-run mtimes) as deltas merged by id. If the box is down, GitHub events still flow and box-sourced seat state shows stale.
+
+11. **Busy seats showed idle.** A quick reply cleared the prompt signal, and background work was not logged. `fleet/activity.jsonl` records one line at the start and one at the end (`kind` `subagent`, `turn`, or `watcher`). The seat stays working while a start has no later end for the same seat, kind, and tag, for at most 60 minutes. Names and times only. Not counted in N of M. Off-box seats POST the same line with their own App token.
+
+12. **The header said IDLE while the dot blinked or the node said working.** Chip text, the blinking dot, and the node label read one state: working, then active, then idle. A working seat is working in all three. Working stays outside N of M.
+
+13. **A prompt went quiet and a post could name another seat.** `seat` on `POST /activity` is optional. When it is present it must match the installation token, case-insensitive, or the response is 403 `seat mismatch`. The stored seat is the token's seat. There is no static key. A `SENT` prompt pulse keeps the seat working for 10 minutes, after display names resolve through seats aliases. An open `activity.jsonl` start still caps at 60 minutes. `fleet.missing_activity` lists seats that pulsed in the last 60 minutes with no activity line. The page does not show that list.
+
+14. **An idle watcher lit the board.** A scheduled check wrote a start on every tick, so a seat with no work stayed working. The watcher looks first and writes nothing while it looks. No live work means no line, except one watcher `end` when the last watcher line is an open start. Live work means a watcher start, the check, then the matching end. A lone open start that never gets that end expires after 60 minutes. Each user turn logs `kind` `turn` start and end. Every subagent, including a desktop or browser (`computerUse`) run, logs `kind` `subagent` start and end.
+
+15. **Watchers learned about a pull request only by polling.** The feed pass appends one inbox line per new event id. Critic gets new and updated pull requests. Maker gets Critic PASS plus green CI on the same head sha. Chaos gets merges to develop. Operator gets Railway deploys and holds, lab issues, and asks for Railway, lab, labtest, or cloud agents. CoS gets stalls, watcher gaps, and Lead or `needs-decision`. A watcher reads its inbox first and keeps its old checks as backup. Only `GET /inbox/maker` is served, with the maker installation token. `WAVEBOARD.md` rebuilds from the same pass, at most once a minute. A builder failure does not stop the feed.
+
+16. **The waveboard had no live card.** The Spectrum page reads `waveboard` off the feed it already polls. The feed pass captures a packet from the issue or pull request body already in hand, and from the seat inboxes. No second poller and no extra GitHub read. A same-second watcher run is not a beat. A live card quiet for 60 minutes stalls to the coordinator inbox. Closed cards leave after 24 hours.

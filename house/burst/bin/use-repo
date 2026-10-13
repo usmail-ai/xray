@@ -1,0 +1,9 @@
+#!/bin/sh
+# Point the current repo's commits at the seat bot. Login and id come from the environment.
+set -eu
+: "${BURST_BOT_LOGIN:?}"
+: "${BURST_BOT_ID:?}"
+git config user.name "$BURST_BOT_LOGIN"
+git config user.email "${BURST_BOT_ID}+${BURST_BOT_LOGIN}@users.noreply.github.com"
+helper=$(CDPATH= cd -- "$(dirname "$0")" && pwd)/git-credential
+git config credential.helper "$helper"

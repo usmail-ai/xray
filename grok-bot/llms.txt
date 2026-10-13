@@ -7,8 +7,9 @@
 1. Board: `house/WAVEBOARD.md` and `house/ATTENTION_STATE.md`. If a file is missing, use the same name under `templates/house/`.
 2. Read `AGENTS.md` (order of operations + multiplicity).
 3. Open `SKILLS.md` and run skills in order for **each** key agent.
-4. No `house/` yet: `npx @0xray/grok-bot house init` (skill `setup-house`). It copies `templates/house/` and refuses to overwrite. Doctor uses `GROK_BOT_HOUSE` if set, otherwise walks up for `house/HOUSE.md`.
-5. After a long chat or before coding: `skills/survive-compact/SKILL.md` — read disk, resume the live cloud, do not rebuild.
+4. No `house/` yet: `npx @0xray/grok-bot house init` (skill `setup-house`). It copies `templates/house/`, including `watchers/` and `fleet/`, and refuses to overwrite. `house init --migrate` appends `## Cadence` when `HOUSE.md` lacks it and starts missing watcher and fleet files. It does not overwrite a ledger. Doctor uses `GROK_BOT_HOUSE` if set, otherwise walks up for `house/HOUSE.md`. With a Cadence section, doctor warns when a watcher log or `stall-sweep.log` is older than 2 hours, when the activity log's last line lacks `t_ct`, `kind`, `action`, and `seat`, or when the suit codex term count differs from `node_modules/0xray`.
+5. Cadence defaults: https://github.com/0xRayAI/xray/blob/main/docs/opproc-cadence.md — delete `## Cadence` if the house has no code loop. Watchers: `house/watchers/merge-queue.md`, `review-sent.log`, `stall-sweep.log`, `issue-sweep-last.txt`, `waveboard-static.md`. Fleet logs: `house/fleet/activity.jsonl`, `house/fleet/prompts.jsonl`.
+6. After a long chat or before coding: `skills/survive-compact/SKILL.md` — read disk, resume the live cloud, do not rebuild.
 
 ## Install
 ```bash

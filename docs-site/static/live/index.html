@@ -12,7 +12,7 @@
     header { animation: rise .6s ease-out both; }
     .title { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
     #mark { width: 112px; height: 44px; flex: none; }
-    .pill { display: inline-block; width: 11ch; text-align: center; white-space: nowrap; flex: none; font-size: 11px; font-weight: 700; letter-spacing: .08em; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--teal); color: #b8ffe9; background: #12382f; }
+    .pill { display: inline-block; width: 16ch; text-align: center; white-space: nowrap; flex: none; font-size: 11px; font-weight: 700; letter-spacing: .08em; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--teal); color: #b8ffe9; background: #12382f; }
     .pill::before { content: "\25CF  "; color: #ff5a4f; animation: blink 1.6s ease-in-out infinite; }
     .fleet { margin-left: auto; text-align: right; white-space: nowrap; font-size: 11px; line-height: 1.5; color: var(--dim); font-variant-numeric: tabular-nums; }
     .fleet b { color: var(--text); font-weight: 600; }
@@ -24,7 +24,7 @@
     @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
     @keyframes blink { 50% { opacity: .35; } }
     @media (prefers-reduced-motion: reduce) {
-      header, .pill::before { animation: none; }
+      header, .pill::before, .dot.blink { animation: none; }
       #mesh { transition: none; }
     }
     header h1 { font-size: 20px; margin: 0; letter-spacing: .04em; }
@@ -36,6 +36,7 @@
     .seats { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
     .seat { display: flex; gap: 8px; align-items: center; min-width: 0; }
     .dot { width: 14px; height: 14px; border-radius: 50%; background: #283246; flex: none; }
+    .dot.blink { animation: blink 1.1s ease-in-out infinite; }
     .seat .nm { font-weight: 700; font-size: 13px; }
     .seat .st { color: var(--dim); font-size: 11px; white-space: nowrap; }
     .seat.live .st { color: var(--text); }
@@ -44,6 +45,12 @@
     #headTime { color: var(--dim); font-size: 12px; }
     canvas { display: block; width: 100%; height: auto; }
     .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .spec-tag { display: inline-block; flex: none; margin-left: 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; padding: 3px 8px; border-radius: 999px;
+      color: #fff; border: 1px solid #8a7bff; background: linear-gradient(90deg, #3a1530, #3a2a10, #123320, #10263a, #24143a);
+      opacity: 0; visibility: hidden; transition: opacity .3s ease, visibility 0s linear .3s; pointer-events: none; }
+    .spec-tag.on { opacity: 1; visibility: visible; transition: opacity .3s ease; }
+    @media (prefers-reduced-motion: reduce) { .spec-tag, .spec-tag.on { transition: none; } }
+    .ambient-toggle { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #a99bff; cursor: pointer; }
     button, select { background: #10182a; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font: inherit; cursor: pointer; }
     button:hover { border-color: #3a4c72; }
     #live.on { background: #12382f; border-color: var(--teal); color: #b8ffe9; }
@@ -61,11 +68,34 @@
     .legend { color: var(--dim); font-size: 11px; }
     footer { color: var(--dim); font-size: 12px; }
     footer a { color: #3de0e8; }
+    .split { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; align-items: start; margin-bottom: 8px; }
+    .split .panel { margin-bottom: 0; max-height: 70vh; overflow: auto; }
+    .stage { margin: 8px 0 4px; color: var(--dim); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+    .wcard { display: block; width: 100%; text-align: left; margin: 0 0 6px; }
+    .meta { color: var(--dim); font-size: 11px; }
+    .wcard.amber { border-color: #e0a100; }
+    .wcard.stall { border-color: #ff5a4f; box-shadow: inset 3px 0 0 #ff5a4f; }
+    .wcard.glow { box-shadow: 0 0 0 1px var(--teal), 0 0 12px rgba(88, 210, 180, .45); }
+    .wcard.on { border-color: var(--teal); }
+    .badge { font-size: 10px; letter-spacing: .04em; border: 1px solid var(--line); border-radius: 999px; padding: 1px 6px; }
+    .wcard.amber .badge { color: #e0a100; border-color: #e0a100; }
+    #waveToggle { display: none; }
+    .packet { margin: 0; }
+    .packet div { display: grid; grid-template-columns: 8.5ch 1fr; gap: 6px; padding: 2px 0; }
+    .packet dt { color: var(--dim); }
+    .beat { padding: 3px 0; border-top: 1px solid #111a2a; font-size: 12px; }
     @media (max-width: 720px) {
       .seats { grid-template-columns: repeat(4, 1fr); }
       .fleet { white-space: normal; }
       #log li { grid-template-columns: 9ch 1fr; }
       #log .who { display: none; }
+      .split { grid-template-columns: 1fr; }
+      #waveToggle { display: inline-block; }
+      .split .detail { display: none; }
+      .split.open .detail { display: block; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .wcard.glow { box-shadow: inset 0 0 0 1px var(--teal); }
     }
   </style>
 </head>
@@ -75,7 +105,7 @@
     <div class="title">
       <canvas id="mark" width="112" height="44" role="img" aria-label="0xRay"></canvas>
       <h1>BLAZE DESK <span>ping-pong mesh · live feed: PRs + Light + X both ways</span></h1>
-      <span class="pill" id="pill">LIVE</span>
+      <span class="pill" id="pill">LIVE</span><span class="spec-tag" id="specTag" aria-hidden="true">🌈 SPECTRUM</span>
       <div class="fleet" aria-live="off"><b id="fleet">Fleet: …</b><br><span id="blackout"></span></div>
     </div>
     <p class="status" id="status">Loading feed…</p>
@@ -103,8 +133,20 @@
       <option value="3600">1 h / s</option>
     </select>
     <button id="live" type="button" class="on">Live</button>
+    <label class="ambient-toggle" title="Replay loop: every 10 s, replay the last few minutes dimmed (visual only)"><input id="ambient" type="checkbox" checked> Replay loop</label>
     <input id="slider" type="range" min="0" max="1" step="1000" value="1" aria-label="Timeline">
     <span id="tLabel"></span>
+  </section>
+
+  <section class="split" id="waveSplit" aria-label="Waveboard">
+    <div class="panel board">
+      <div class="lens-head">
+        <span>WAVEBOARD · cards by stage</span>
+        <button id="waveToggle" type="button">Packet</button>
+      </div>
+      <div id="waveBoard"></div>
+    </div>
+    <aside class="panel detail" id="wavePanel" aria-label="Packet"></aside>
   </section>
 
   <section class="panel" aria-label="Activity">
@@ -115,6 +157,7 @@
   <footer>Feed: <a href="live-events.json">live-events.json</a> (Pages copy) · source of truth is the <code>live-wire</code> branch.</footer>
 </main>
 <script src="live.js"></script>
+<script src="waveboard.js"></script>
 <script>
 (function () {
   'use strict';
@@ -123,7 +166,7 @@
   var canvas = document.getElementById('mesh');
   var ctx = canvas.getContext('2d');
   var $ = function (id) { return document.getElementById(id); };
-  var state = { events: [], live: true, t: Date.now(), generatedAt: null };
+  var state = { events: [], live: true, t: Date.now(), generatedAt: null, working: null, cursor: null };
   var playing = false, speed = 600, source = '', fetchError = '', lastFrame = performance.now();
   var orbit = 0, lastDraw = null, dragging = false;
   var flashes = [];            // live-mode pings: { e, start } in wall ms
@@ -193,6 +236,40 @@
     return L.pingsAt(state.events, state.t, L.PING_MS * speed);
   }
 
+  // Ambient replay loop: every 10 s, replay the last 5 min of events as ~5 s of dimmed motion on its own clock.
+  // Visual only: never changes state.live / state.t / speed, so the LIVE pill, timestamps, seat states and counts
+  // are untouched, and its pings feed no edge burst, pulse or hot seat. Live pings draw on top at full brightness.
+  // requestAnimationFrame only, reuses state.events (no fetches). Off for reduced motion, paused while hidden,
+  // toggle (on by default) and ?spectrum=0.
+  var AMBIENT_EVERY_MS = 10000, AMBIENT_MS = 5000, AMBIENT_WINDOW_MS = 5 * 60 * 1000, AMBIENT_ALPHA = 0.4, AMBIENT_MIN_EVENTS = 20;
+  var ambientOn = !reduced && !/[?&]spectrum=0(&|$)/.test(location.search);
+  var ambient = null, ambientNext = 0, ambientStats = window.LIVE_AMBIENT = { passes: 0, on: ambientOn };
+  // Rainbow trail: replayed packets leave a short fading rainbow tail whose hue cycles along the path (never live pings)
+  function rainbowTrail(a, m, b, p, nowWall) {
+    for (var k = 12; k >= 1; k--) {
+      var tq = bez(a, m, b, Math.max(0, p - k * 0.025)), hue = Math.round((p * 360 + k * 28 + nowWall * 0.12) % 360);
+      ctx.fillStyle = 'hsla(' + hue + ',95%,62%,' + ((13 - k) / 13 * 0.9).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(tq[0], tq[1], 1.5 + (13 - k) * 0.38, 0, 7); ctx.fill();
+    }
+  }
+  var specTagOn = false;
+  function ambientPings(nowWall) {
+    if (!ambientOn || !state.live || document.hidden) { ambient = null; ambientNext = nowWall + AMBIENT_EVERY_MS; return []; }
+    if (!ambient) {
+      if (nowWall < ambientNext) return [];
+      ambientNext = nowWall + AMBIENT_EVERY_MS;
+      var now = Date.now(), shown = L.countUpTo(state.events, now);
+      if (!shown) return [];
+      var from = now - AMBIENT_WINDOW_MS;
+      if (shown - L.countUpTo(state.events, from) === 0) from = state.events[Math.max(0, shown - AMBIENT_MIN_EVENTS)]._t - 1;
+      var end = Math.min(now, state.events[shown - 1]._t + 1);
+      ambient = { from: from, end: end, start: nowWall, sp: Math.max(1, (end - from) / AMBIENT_MS) };
+      ambientStats.passes++;
+    }
+    var k = (nowWall - ambient.start) / AMBIENT_MS;
+    if (k >= 1 || k < 0) { ambient = null; return []; }
+    return L.pingsAt(state.events, ambient.from + k * (ambient.end - ambient.from), L.PING_MS * ambient.sp);
+  }
   function draw(nowWall, pings) {
     var s = canvas.width / W;
     var fs = Math.max(1, 0.55 / (canvas.clientWidth / W));   // keep labels readable on phones
@@ -243,18 +320,25 @@
         ctx.beginPath(); ctx.arc(q[0], q[1], size, 0, 7); ctx.fill();
       }
     });
-    // pings in flight
-    pings.forEach(function (pk) {
+    // pings in flight: dimmed ambient replay underneath, live pings on top at full brightness
+    var ghosts = ambientPings(nowWall); ambientStats.drawing = ghosts.length;
+    var tagOn = !!ambient;   // replay pass running: tag beside the pill (the pill itself is untouched)
+    if (tagOn !== specTagOn) { specTagOn = tagOn; $('specTag').classList.toggle('on', tagOn); }
+    if (!reduced) { ghosts.forEach(function (g) { g.rainbow = true; }); }
+    if (ghosts.length) { ctx.globalAlpha = AMBIENT_ALPHA; ghosts.forEach(drawPing); ctx.globalAlpha = 1; }
+    pings.forEach(drawPing);
+    function drawPing(pk) {
       var a = pos[pk.src], b = pos[pk.dst], m = edgeMid(a, b);
       var p = Math.min(1, Math.max(0, pk.p)); p = p * p * (3 - 2 * p);
-      for (var k = 5; k >= 1; k--) {
+      if (pk.rainbow) rainbowTrail(a, m, b, p, nowWall);
+      else for (var k = 5; k >= 1; k--) {
         var tq = bez(a, m, b, Math.max(0, p - k * 0.04));
         ctx.fillStyle = rgb(pk.col, (6 - k) / 6); ctx.beginPath(); ctx.arc(tq[0], tq[1], 6 - k, 0, 7); ctx.fill();
       }
       var q = bez(a, m, b, p);
       ctx.fillStyle = rgb(pk.col); ctx.beginPath(); ctx.arc(q[0], q[1], 9, 0, 7); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(q[0], q[1], 3, 0, 7); ctx.fill();
-    });
+    }
     // hub. The label comes from the page config so a house can name the center.
     var hub = L.HUB_LABEL || 'Burst';
     ctx.font = 'bold ' + 16 * fs + 'px system-ui, sans-serif';
@@ -270,7 +354,8 @@
       var pul = 0;
       pings.forEach(function (pk) { if (pk.src === key) pul = Math.max(pul, L.pulse(pk.p * L.PULSE_MS, reduced)); });
       ctx.globalAlpha = L.entry(since, i, reduced);
-      drawNode(key, !!hot[key], fs, pul);
+      var seatState = L.seatState(!!hot[key], !!L.seatWorking(state.working, Date.now())[key]);
+      drawNode(key, seatState, fs, pul);
       ctx.globalAlpha = 1;
     });
     return hot;
@@ -281,7 +366,8 @@
     ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   }
 
-  function drawNode(key, isHot, fs, pul) {
+  function drawNode(key, seatState, fs, pul) {
+    var isHot = seatState === 'working' || seatState === 'active';
     var xy = pos[key], x = xy[0], y = xy[1], c = L.COLOR[key], sq = !!L.SQUARE[key], r = sq ? 15 : 18 + 3 * pul;
     var img = imgs[key], glyph = L.GLYPH[key], mark = L.MARK_PATH[key];
     var bare = !sq && (!!glyph || !!(img && img.complete && img.naturalWidth));   // image / glyph seats: no ring
@@ -317,7 +403,7 @@
       }
     }
     if (!sq) r = 18;
-    var title = L.LABEL[key], sub = L.SUB[key];
+    var title = L.LABEL[key], sub = seatState;
     ctx.font = 'bold ' + 14 * fs + 'px system-ui, sans-serif';
     var tw = ctx.measureText(title).width;
     ctx.font = 11 * fs + 'px system-ui, sans-serif';
@@ -335,12 +421,15 @@
     var cur = shown ? state.events[shown - 1] : null;
     $('head').textContent = cur ? L.headline(cur) : '\u00a0';
     $('headTime').textContent = cur ? L.fmtCt(cur._t) + (state.live ? '' : ' · rewound') : '\u00a0';
+    var working = L.seatWorking(state.working, Date.now());
     L.AGENTS.forEach(function (a) {
-      var s = seatEls[a[0]], on = !!hot[a[0]], c = L.COLOR[a[0]];
-      s.el.classList.toggle('live', on);
-      s.dot.style.background = on ? rgb(c) : '#283246';
-      s.dot.style.boxShadow = on ? '0 0 0 2px #04060c, 0 0 0 4px ' + rgb(c) : 'none';
-      s.st.textContent = s.role + ' · ' + (on ? 'LIVE' : 'IDLE');
+      var s = seatEls[a[0]], c = L.COLOR[a[0]];
+      var seatState = L.seatState(!!hot[a[0]], !!working[a[0]]);
+      s.el.classList.toggle('live', seatState !== 'idle');
+      s.dot.classList.toggle('blink', seatState === 'working' && !reduced);
+      s.dot.style.background = seatState === 'idle' ? '#283246' : rgb(c);
+      s.dot.style.boxShadow = seatState === 'idle' ? 'none' : '0 0 0 2px #04060c, 0 0 0 4px ' + rgb(c);
+      s.st.textContent = s.role + ' · ' + seatState;
     });
     var logKey = shown + ':' + state.events.length;
     if (logKey !== lastLogKey) { lastLogKey = logKey; renderLog(shown); }
@@ -352,8 +441,9 @@
     if (!dragging || state.live) slider.value = state.live ? b[1] : state.t;
     $('tLabel').textContent = state.live ? 'now · ' + L.fmtCt(now) : L.fmtCt(state.t);
     $('live').classList.toggle('on', state.live);
-    $('pill').textContent = state.live ? 'LIVE' : 'REWOUND';
-    $('pill').classList.toggle('off', !state.live);
+    var fresh = L.freshnessLabel(state.generatedAt, now);
+    $('pill').textContent = fresh;
+    $('pill').classList.toggle('off', fresh !== 'LIVE');
     $('fleet').textContent = L.fleetLine(hot);
     $('blackout').textContent = L.blackoutLine(now);
     $('play').innerHTML = L.isPlaying(state.live, playing) ? '&#10074;&#10074; Pause' : '&#9654; Play';
@@ -383,6 +473,9 @@
   function rewindTo(t) { state.live = false; flashes = []; state.t = t; lastText = 0; }
 
   $('live').addEventListener('click', goLive);
+  $('ambient').checked = ambientOn; $('ambient').disabled = reduced;
+  if (reduced) $('ambient').parentNode.title = 'Replay loop is off (reduced motion)';
+  $('ambient').addEventListener('change', function (ev) { ambientOn = ambientStats.on = !reduced && ev.target.checked; ambient = null; });
   $('play').addEventListener('click', function () {
     if (state.live) { rewindTo(Date.now()); playing = false; return; }
     if (playing) { playing = false; lastText = 0; return; }
@@ -415,25 +508,108 @@
     requestAnimationFrame(frame);
   }
 
-  var first = true;
+  var W = window.Waveboard;
+  var waveSeen = null;
+  var waveSelected = '';
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+  function paintWave() {
+    var board = state.waveboard;
+    var model = W.view(board, waveSelected, waveSeen);
+    var host = $('waveBoard');
+    host.textContent = '';
+    var any = false;
+    model.stages.forEach(function (stage) {
+      var group = model.groups[stage];
+      if (!group.length) return;
+      any = true;
+      host.appendChild(el('div', 'stage', stage));
+      group.forEach(function (card) {
+        var cls = 'wcard';
+        if (card.amber) cls += ' amber';
+        if (card.stall) cls += ' stall';
+        if (model.glow[card.id]) cls += ' glow';
+        if (card.id === waveSelected) cls += ' on';
+        var btn = el('button', cls);
+        btn.type = 'button';
+        btn.dataset.id = card.id;
+        btn.appendChild(el('div', '', card.title || card.id));
+        var meta = el('div', 'meta');
+        meta.appendChild(document.createTextNode((card.owner || 'unassigned') + ' · ' + card.stage + ' · ' + W.ageText(card.age_s)));
+        meta.appendChild(document.createTextNode(' '));
+        meta.appendChild(el('span', 'badge', card.badge || ''));
+        if (card.stall) meta.appendChild(el('span', 'badge', 'stall'));
+        btn.appendChild(meta);
+        host.appendChild(btn);
+      });
+    });
+    if (!any) host.appendChild(el('p', 'note', 'No open cards on this feed.'));
+    var panel = $('wavePanel');
+    panel.textContent = '';
+    var card = model.selected;
+    if (!card) {
+      panel.appendChild(el('p', 'note', 'Select a card.'));
+    } else {
+      panel.appendChild(el('div', '', card.title || card.id));
+      panel.appendChild(el('p', 'meta', (card.owner || 'unassigned') + ' · ' + card.stage + ' · ' + card.state));
+      var list = document.createElement('dl');
+      list.className = 'packet';
+      model.fields.forEach(function (pair) {
+        var row = document.createElement('div');
+        row.appendChild(el('dt', '', pair[1]));
+        row.appendChild(el('dd', '', (card.packet && card.packet[pair[0]]) || ''));
+        list.appendChild(row);
+      });
+      panel.appendChild(list);
+      (card.beats || []).slice(0, 5).forEach(function (beat) {
+        panel.appendChild(el('div', 'beat', beat.type + ' · ' + (beat.label || '')));
+      });
+    }
+    waveSeen = W.noteBeats((board && board.cards) || [], waveSeen);
+  }
+  $('waveBoard').addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button');
+    if (!btn || !btn.dataset.id) return;
+    waveSelected = btn.dataset.id;
+    var narrow = W.layout(window.innerWidth) === 'toggle';
+    if (narrow) $('waveSplit').classList.add('open');
+    paintWave();
+  });
+  $('waveToggle').addEventListener('click', function () {
+    $('waveSplit').classList.toggle('open');
+  });
+
+  var first = true, pollTimer = 0;
+  function armPoll() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(poll, mem.cursor ? L.BURST_POLL_MS : L.POLL_MS);
+  }
   function poll() {
     if (document.hidden && !first) return;
-    L.fetchFeed(window.fetch.bind(window), Date.now(), mem).then(function (r) {
+    var run = mem.cursor ? L.burstPoll(window.fetch.bind(window), Date.now(), mem) : L.fetchFeed(window.fetch.bind(window), Date.now(), mem);
+    run.then(function (r) {
       source = r.source; fetchError = '';
+      if (r.feed && r.feed.cursor) { mem.cursor = r.feed.cursor; armPoll(); }
       if (!r.feed) return;
       var out = L.applyFeed(state, r.feed, Date.now());
       state = out.state;
-      var fresh = first ? state.events.slice(-6) : state.events.filter(function (e) { return out.added.indexOf(e.id) >= 0; }).slice(-12);
+      if (state.cursor) mem.cursor = state.cursor;
+      var freshIds = first ? state.events.slice(-6) : state.events.filter(function (e) { return out.added.indexOf(e.id) >= 0; }).slice(-12);
       if (state.live) {
         var t0 = performance.now();
-        fresh.forEach(function (e, i) { flashes.push({ e: e, start: t0 + i * STAGGER_MS }); });
+        freshIds.forEach(function (e, i) { flashes.push({ e: e, start: t0 + i * STAGGER_MS }); });
       }
+      paintWave();
       first = false; lastText = 0; lastLogKey = '';
     }).catch(function (err) { fetchError = 'feed fetch failed, retrying'; lastText = 0; console.warn(err); });
   }
   document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
   poll();
-  setInterval(poll, L.POLL_MS);
+  armPoll();
   requestAnimationFrame(frame);
 })();
 </script>

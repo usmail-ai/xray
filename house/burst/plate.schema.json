@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "house/burst/plate.schema.json",
+  "title": "Burst seat plate",
+  "description": "Identity stamp on every activity line and every GitHub write from that seat: seat name, App bot login, role, color, emoji. The human architect has an empty bot.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["seat", "bot", "role", "color", "emoji"],
+  "properties": {
+    "seat": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{1,40}$"
+    },
+    "bot": {
+      "type": "string",
+      "description": "GitHub App bot login, including the [bot] suffix. Empty for the human architect.",
+      "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9-]*\\[bot\\]$"
+    },
+    "role": {
+      "type": "string",
+      "enum": ["architect", "builder", "gate", "lab", "operator", "coordinator", "cloud"]
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}$"
+    },
+    "emoji": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8
+    }
+  },
+  "examples": [
+    { "seat": "builder", "bot": "builder-app[bot]", "role": "builder", "color": "#3DE0E8", "emoji": "🔨" }
+  ]
+}

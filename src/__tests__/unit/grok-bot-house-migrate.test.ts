@@ -43,6 +43,12 @@ function template(name: string): string {
   return readFileSync(path.join(kit, 'templates', 'house', name), 'utf8');
 }
 
+function cadenceBlock(): string {
+  const match = template('HOUSE.md').match(/^## Cadence\r?\n[\s\S]*?(?=^## )/m);
+  if (!match) throw new Error('template HOUSE.md has no Cadence block');
+  return `${match[0].replace(/\s+$/, '')}\n`;
+}
+
 describe('grok-bot house init --migrate', () => {
   it('moves ops/WAVEBOARD.md and starts ATTENTION_STATE.md', () => {
     const dir = scratch();
@@ -114,7 +120,9 @@ describe('grok-bot house init --migrate', () => {
       expect(result.ok).toBe(true);
       expect(existsSync(path.join(dir, 'ops', 'WAVEBOARD.md'))).toBe(false);
       expect(readFileSync(path.join(dir, 'house', 'WAVEBOARD.md'), 'utf8')).toBe('old cards\n');
-      expect(readFileSync(path.join(dir, 'house', 'HOUSE.md'), 'utf8')).toBe('custom house\n');
+      const house = readFileSync(path.join(dir, 'house', 'HOUSE.md'), 'utf8');
+      expect(house.startsWith('custom house\n')).toBe(true);
+      expect(house.match(/^## Cadence$/gm)).toHaveLength(1);
       expect(readFileSync(path.join(dir, 'house', 'ATTENTION_STATE.md'), 'utf8')).toBe(template('ATTENTION_STATE.md'));
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -129,6 +137,39 @@ describe('grok-bot house init --migrate', () => {
       expect(result.ok).toBe(false);
       expect(result.message).toMatch(/not a file/);
       expect(existsSync(path.join(dir, 'house', 'HOUSE.md'))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('appends the Cadence block once and does not overwrite a ledger', () => {
+    const dir = scratch();
+    const ledger = 'custom ledger\n- [x] org/app #1 abc fixes #2 — kept\n';
+    try {
+      mkdirSync(path.join(dir, 'house', 'watchers'), { recursive: true });
+      writeFileSync(path.join(dir, 'house', 'HOUSE.md'), '# House\n\n## Owner\nAda.\n');
+      writeFileSync(path.join(dir, 'house', 'watchers', 'merge-queue.md'), ledger);
+      const result = initHouse({ dir, kitRoot: kit, migrate: true });
+      expect(result.ok).toBe(true);
+      expect(result.code).toBe(0);
+      expect(result.message).toMatch(/added Cadence section/);
+      expect(result.message).toMatch(/started watchers\//);
+      const house = readFileSync(path.join(dir, 'house', 'HOUSE.md'), 'utf8');
+      expect(house.startsWith('# House\n\n## Owner\nAda.\n')).toBe(true);
+      expect(house.match(/^## Cadence$/gm)).toHaveLength(1);
+      expect(house).toContain(cadenceBlock());
+      expect(readFileSync(path.join(dir, 'house', 'watchers', 'merge-queue.md'), 'utf8')).toBe(ledger);
+      expect(existsSync(path.join(dir, 'house', 'watchers', 'stall-sweep.log'))).toBe(true);
+      expect(existsSync(path.join(dir, 'house', 'watchers', 'review-sent.log'))).toBe(true);
+      expect(existsSync(path.join(dir, 'house', 'watchers', 'issue-sweep-last.txt'))).toBe(true);
+      expect(existsSync(path.join(dir, 'house', 'watchers', 'waveboard-static.md'))).toBe(true);
+      expect(existsSync(path.join(dir, 'house', 'fleet', 'activity.jsonl'))).toBe(true);
+      expect(existsSync(path.join(dir, 'house', 'fleet', 'prompts.jsonl'))).toBe(true);
+      const again = initHouse({ dir, kitRoot: kit, migrate: true });
+      expect(again.ok).toBe(true);
+      expect(again.message).not.toMatch(/added Cadence section/);
+      expect(readFileSync(path.join(dir, 'house', 'HOUSE.md'), 'utf8')).toBe(house);
+      expect(readFileSync(path.join(dir, 'house', 'watchers', 'merge-queue.md'), 'utf8')).toBe(ledger);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

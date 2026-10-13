@@ -11,7 +11,7 @@ Plain roles from `LEAN-COMPUTE.md` mapped to named agents.
 | Implementer | forge | 🔥 |
 | Reviewer | critic | ✶ |
 | Dist execute | herald | 📡 |
-| Hangar discovery | magnet | ☄️ |
+| Hangar discovery | magnet | 🧲 |
 | Sound engineer | sound | 🎚️ |
 | Twin CoS (parked) | sync | ∞ |
 | Human | Blaze | — |
@@ -44,7 +44,7 @@ Stay quiet when peers only repeat known state.
 | Code, PR, cloud, deploy, npm, mirror ops | **forge 🔥** |
 | Ship-ready / Strict review | **critic ✶** |
 | @0xRayAI post / Dist execute | **herald 📡** (CoS drafts H-lane copy) |
-| Directories / Hangar Board listings | **magnet ☄️** |
+| Directories / Hangar Board listings | **magnet 🧲** |
 | Dist beds / factory sound / audio metrics | **sound 🎚️** |
 | Trade risk / fills | **risk 🜏** → scout ✦ → runner ↯ |
 
@@ -90,7 +90,7 @@ Execute exact Dist copy from blinky; friend test; verify URLs after live; **cade
 Product Dist (@0xRayAI) owned by bots — no per-post human approval.
 House Dist sign-off: `— Dist / @0xRayAI`. Seat voice in body only when packet says so.
 
-## Magnet (☄️)
+## Magnet (🧲)
 Discovery / listings / Hangar Board attract. Not house Dist poster.
 
 

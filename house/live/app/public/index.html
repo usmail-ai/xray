@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>🌈 Live board · Example live fleet</title>
+<link rel="icon" href="data:,">
+  <style>
+    :root { --bg: #04060c; --panel: #080c14; --line: #23304a; --dim: #8c96b4; --text: #e6ebff; --teal: #58d2b4; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { max-width: 1100px; margin: 0 auto; padding: 12px; }
+    header { animation: rise .6s ease-out both; }
+    .title { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    #mark { width: 112px; height: 44px; flex: none; }
+    .pill { display: inline-block; width: 11ch; text-align: center; white-space: nowrap; flex: none; font-size: 11px; font-weight: 700; letter-spacing: .08em; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--teal); color: #b8ffe9; background: #12382f; }
+    .pill::before { content: "\25CF  "; color: #ff5a4f; animation: blink 1.6s ease-in-out infinite; }
+    .fleet { margin-left: auto; text-align: right; white-space: nowrap; font-size: 11px; line-height: 1.5; color: var(--dim); font-variant-numeric: tabular-nums; }
+    .fleet b { color: var(--text); font-weight: 600; }
+    #blackout { color: #ffb347; font-weight: 700; font-size: 13px; letter-spacing: .02em; }
+    .pill.off { border-color: var(--line); color: var(--dim); background: #10182a; }
+    .pill.off::before { color: var(--dim); animation: none; }
+    .pill.replay { border-color: #6d5bd0; color: #d9d2ff; background: #1c1838; }
+    .pill.replay::before { color: #a99bff; }
+    .pill.behind { border-color: #b07a20; color: #ffd38a; background: #2a1f0c; }
+    .pill.behind::before { color: #ffb84d; animation: none; }
+    .seat { position: relative; }
+    .seat .dot.blink { animation: live-blink 1.1s ease-in-out infinite; }
+    @keyframes live-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+    @media (prefers-reduced-motion: reduce) { .seat .dot.blink { animation: none; } }
+    .seat.stale { opacity: 0.55; border-style: dashed; }
+    #mesh { opacity: 0; transition: opacity 1.2s ease-out; }
+    #mesh.in { opacity: 1; }
+    @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    @keyframes blink { 50% { opacity: .35; } }
+    @media (prefers-reduced-motion: reduce) {
+      header, .pill::before { animation: none; }
+      #mesh { transition: none; }
+    }
+    header h1 { font-size: 20px; margin: 0; letter-spacing: .04em; }
+    header { margin-bottom: 8px; }
+    .status b[title] { cursor: help; }
+    header h1 span { color: var(--dim); font-size: 13px; font-weight: 400; letter-spacing: 0; margin-left: 8px; }
+    .status { color: var(--dim); font-size: 13px; margin: 4px 0 0; }
+    .status b { color: var(--text); font-weight: 600; }
+    .note { color: var(--dim); font-size: 12px; margin: 2px 0 10px; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; }
+    .seats { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+    .seat { display: flex; gap: 8px; align-items: center; min-width: 0; }
+    .dot { width: 14px; height: 14px; border-radius: 50%; background: #283246; flex: none; }
+    .seat .nm { font-weight: 700; font-size: 13px; }
+    .seat .st { color: var(--dim); font-size: 11px; white-space: nowrap; }
+    .seat.live .st { color: var(--text); }
+    .lens-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--dim); }
+    #head { color: var(--teal); font-weight: 700; font-size: 15px; }
+    #headTime { color: var(--dim); font-size: 12px; }
+    canvas { display: block; width: 100%; height: auto; }
+    .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .spec-tag { display: inline-block; flex: none; margin-left: 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; padding: 3px 8px; border-radius: 999px;
+      color: #fff; border: 1px solid #8a7bff; background: linear-gradient(90deg, #3a1530, #3a2a10, #123320, #10263a, #24143a);
+      opacity: 0; visibility: hidden; transition: opacity .3s ease, visibility 0s linear .3s; pointer-events: none; }
+    .spec-tag.on { opacity: 1; visibility: visible; transition: opacity .3s ease; }
+    @media (prefers-reduced-motion: reduce) { .spec-tag, .spec-tag.on { transition: none; } }
+    main { max-width: 1560px; }
+    .split { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+    .split > .panel { margin: 0; min-width: 0; }
+    .wave { display: flex; flex-direction: column; max-height: 720px; overflow: hidden; isolation: isolate; }
+    .wave-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; color: var(--dim); }
+    .wave-head b { color: #cfe6ff; font-size: 13px; letter-spacing: .04em; }
+    #waveToggle { display: none; }
+    .wave-stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-top: 6px; }
+    .wstat { display: flex; flex-direction: column; align-items: center; padding: 3px 2px; border: 1px solid #22304a; border-radius: 6px; background: #0b1120; }
+    .wstat b { color: #e6ecff; font-size: 14px; } .wstat small { color: #8fa3c6; font-size: 9px; text-align: center; line-height: 1.1; }
+    .wstat.total { border-color: #3b82f6; }
+    @media (max-width: 900px) { .wave.collapsed .wave-stats { display: none; } }
+    .wave-body { overflow-y: auto; margin-top: 6px; padding-right: 2px; }
+    .wgroup { margin: 8px 0 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #8fa3c6; }
+    .wcards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+    .wcard { border: 1px solid #22304a; border-left: 3px solid #3b82f6; border-radius: 8px; padding: 6px 8px; background: #0b1120; font-size: 12px; cursor: pointer; }
+    .wcard.parked { border-left-color: #64748b; opacity: .8; }
+    .wcard.held { border-left-color: #38bdf8; }
+    .wcard.closed { border-left-color: #334155; opacity: .5; }
+    .wcard.nopacket { border-left-color: #f59e0b; }
+    .wcard.stall { border-left-color: #ef4444; }
+    .wcard .wtop { display: flex; justify-content: space-between; gap: 6px; }
+    .wcard .witem { color: #e6ecff; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .wcard .wage { color: #96a0b4; white-space: nowrap; font-family: ui-monospace, monospace; font-size: 11px; }
+    .wcard .wmeta { color: #9fb4d8; margin-top: 2px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .wbadge { font-size: 10px; padding: 0 5px; border-radius: 999px; border: 1px solid #f59e0b; color: #fcd34d; }
+    .wbadge.stall { border-color: #ef4444; color: #fca5a5; }
+    .wbadge.nudge { border-color: #f472b6; color: #f9a8d4; }
+    .wbeats li.nudge, .wbeats li.nudge:last-child { color: #f9a8d4; font-weight: 600; }
+    .wbadge.pin { border-color: #8b5cf6; color: #c4b5fd; }
+    .wbadge.held { border-color: #38bdf8; color: #bae6fd; }
+    .wspin { width: 8px; height: 8px; margin-top: 3px; border-radius: 50%; border: 1.5px solid #7dd3fc; border-right-color: transparent; display: inline-block; animation: wspin .8s linear infinite; flex: none; }
+    @keyframes wspin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .wspin { animation: none; border-color: #7dd3fc; background: #7dd3fc; } }
+    .pinhead, .donehead { display: block; width: 100%; text-align: left; margin: 8px 0 4px; padding: 0; border: 0; background: transparent; font: inherit; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #8fa3c6; cursor: pointer; }
+    .wkids { list-style: none; margin: 2px 0 6px 14px; padding: 0 0 0 8px; border-left: 1px solid #2a3a5c; }
+    .kidhead, .isshead { display: block; margin: 2px 0 2px 14px; padding: 0; border: 0; background: transparent; font: inherit; font-size: 10px; color: #8fa3c6; cursor: pointer; }
+    .wkids.collapsed, .wcards.issues.collapsed, .wcards.pins.collapsed, .wcards.done.collapsed { display: none; }
+    .wsub { margin: 4px 0 2px; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: #6e82a8; }
+    .wdetail { display: none; margin-top: 5px; border-top: 1px solid #1c2740; padding-top: 4px; }
+    .wcard.open .wdetail { display: block; }
+    .wdetail dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 1px 8px; font-size: 11px; }
+    .wdetail dt { color: #8fa3c6; } .wdetail dd { margin: 0; color: #d6def0; overflow-wrap: anywhere; }
+    .wbeats { list-style: none; margin: 4px 0 0; padding: 0; color: #a7b0c4; font-family: ui-monospace, monospace; font-size: 11px; }
+    .wbeats li:last-child { color: #e6ecff; }
+    .wcard.glow { animation: wglow 2.6s ease-out; }
+    @keyframes wglow { 0% { box-shadow: 0 0 0 2px #ffd166, 0 0 18px #ffd16699; } 100% { box-shadow: none; } }
+    @media (prefers-reduced-motion: reduce) { .wcard.glow { animation: none; outline: 2px solid #ffd166; } }
+    @media (max-width: 900px) { .split { grid-template-columns: 1fr; } #waveToggle { display: inline-block; } .wave.collapsed .wave-body { display: none; } .wave { max-height: none; } }
+    .seat.silent .st, .silent .st { color: #fbbf24; }
+    .ambient-toggle { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #a99bff; cursor: pointer; }
+    button, select { background: #10182a; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font: inherit; cursor: pointer; }
+    button:hover { border-color: #3a4c72; }
+    #live.on { background: #12382f; border-color: var(--teal); color: #b8ffe9; }
+    #live.on::before { content: "\25CF  "; color: #ff5a4f; }
+    #slider { flex: 1 1 260px; accent-color: var(--teal); }
+    #tLabel { font-variant-numeric: tabular-nums; color: var(--dim); font-size: 12px; min-width: 15ch; }
+    #log { list-style: none; margin: 0; padding: 0; }
+    #log li { display: grid; grid-template-columns: 11ch 7ch 1fr; gap: 8px; padding: 3px 0; border-top: 1px solid #111a2a; cursor: pointer; }
+    #log li:first-child { border-top: 0; }
+    #log li:hover { background: #0c1322; }
+    #log .when { color: var(--dim); font-variant-numeric: tabular-nums; font-size: 12px; }
+    #log .who { font-size: 11px; font-weight: 700; padding-top: 1px; }
+    #log a { color: #d2dcf0; text-decoration: none; overflow-wrap: anywhere; }
+    #log a:hover { text-decoration: underline; }
+    .legend { color: var(--dim); font-size: 11px; }
+    footer { color: var(--dim); font-size: 12px; }
+    footer a { color: #3de0e8; }
+    @media (max-width: 720px) {
+      .seats { grid-template-columns: repeat(4, 1fr); }
+      .fleet { white-space: normal; }
+      #log li { grid-template-columns: 9ch 1fr; }
+      #log .who { display: none; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="title"><h1>🌈 Live board</h1><span class="pill" id="pill">LIVE</span><span class="spec-tag" id="specTag" aria-hidden="true">🪞 REPLAY</span></div>
+    <p class="status" id="status">Loading feed…</p>
+    <div hidden><canvas id="mark" width="112" height="44"></canvas><b id="fleet"></b><span id="blackout"></span></div>
+  </header>
+
+  <section class="panel seats" id="seats" aria-label="Seats"></section>
+
+  <div class="split">
+  <section class="panel">
+    <div class="lens-head">
+      <span>THE LENS · PING-PONG VOLLEY</span>
+      <span class="legend">pings = handoffs + pushes · circles = seats · squares = rails</span>
+    </div>
+    <div id="head">&nbsp;</div>
+    <div id="headTime">&nbsp;</div>
+    <canvas id="mesh" width="920" height="400" aria-label="Mesh of seats and rails with handoff pings"></canvas>
+  </section>
+  <aside class="panel wave collapsed" id="wave" aria-label="Board (read-only)">
+    <div class="wave-head"><b>🌊 Board</b><span id="waveCount"></span><button id="waveToggle" type="button" aria-expanded="false" aria-controls="waveBody">Show</button></div>
+    <div class="wave-stats" id="waveStats" aria-label="last 24 h and open now"></div>
+    <div class="wave-body" id="waveBody"></div>
+  </aside>
+  </div>
+
+  <section class="panel controls" aria-label="Timeline">
+    <button id="play" type="button" title="Play / pause the replay (Live plays in real time; click the timeline to replay from there)">&#9654; Play</button>
+    <select id="speed" aria-label="Replay speed">
+      <option value="1">1× real time</option>
+      <option value="60">1 min / s</option>
+      <option value="600" selected>10 min / s</option>
+      <option value="3600">1 h / s</option>
+    </select>
+    <button id="live" type="button" class="on">Live</button>
+    <label class="ambient-toggle" title="Replay loop: every 10 s, replay the last few minutes dimmed (visual only)"><input id="ambient" type="checkbox" checked> Replay loop</label>
+    <input id="slider" type="range" min="0" max="1" step="1000" value="1" aria-label="Timeline">
+    <span id="tLabel"></span>
+  </section>
+
+  <section class="panel" aria-label="Activity">
+    <div class="lens-head"><span>ACTIVITY · from feed (newest first, CT) · tap a row to rewind there</span></div>
+    <ul id="log"></ul>
+  </section>
+
+  <footer>Example</footer>
+</main>
+<script>window.LIVE_FEED_URL = '/live-events.json';</script>
+<script src="live.js"></script>
+<script src="live-config.js"></script>
+<script>
+(function () {
+  'use strict';
+  var L = window.LiveMesh;
+  var W = 920, H = 400;
+  var canvas = document.getElementById('mesh');
+  var ctx = canvas.getContext('2d');
+  var $ = function (id) { return document.getElementById(id); };
+  var state = { events: [], live: true, t: Date.now(), generatedAt: null };
+  var playing = false, speed = 600, source = '', fetchError = '', lastFrame = performance.now();
+  var orbit = 0, lastDraw = null, dragging = false;
+  var flashes = [];            // live-mode pings: { e, start } in wall ms
+  var mem = {};                // fetchFeed etag / rate-limit memory
+  var FLASH_MS = 1600, STAGGER_MS = 450;
+  var reduced = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  var t0Page = performance.now();
+  var pos = {};                // per-frame node positions (SATS + bob)
+  // Replay: replay the recent past as a short live on load, then go live (reuses rewindTo/play/goLive)
+  var REPLAY_MS = 6500, REPLAY_WINDOW_MS = 5 * 60 * 1000, REPLAY_MIN_EVENTS = 20;
+  var replay = null;         // { speed: the user's speed, restored when the live ends }
+  function endReplay() { if (!replay) return; speed = replay.speed; replay = null; lastText = 0; }
+  function startReplay() {
+    var now = Date.now(), shown = L.countUpTo(state.events, now);
+    if (!shown) return false;
+    var from = now - REPLAY_WINDOW_MS;
+    if (shown - L.countUpTo(state.events, from) === 0) from = state.events[Math.max(0, shown - REPLAY_MIN_EVENTS)]._t - 1;
+    var end = Math.min(now, state.events[shown - 1]._t + 1);   // stop at the last replayed event, then go live
+    rewindTo(from);
+    replay = { speed: speed, end: end };
+    speed = Math.max(1, (end - from) / REPLAY_MS); playing = true;
+    return true;
+  }
+
+  // seat images: bots/<seat>.png; a missing file falls back to a lettered badge
+  var imgs = {};
+  L.BOT_IMAGES.forEach(function (k) {
+    var img = new Image();
+    img.onerror = function () { imgs[k] = null; };
+    img.src = L.botImage(k);
+    imgs[k] = img;
+  });
+
+  // 0xRay wordmark from the house recipe cells (never the stamp PNG)
+  (function drawMark() {
+    var mc = $('mark'), mx = mc.getContext('2d'), cells = L.markCells(), dpr = window.devicePixelRatio || 1;
+    mc.width = L.MARK.w * dpr; mc.height = L.MARK.h * dpr; mx.scale(dpr, dpr);
+    var ink = [null, '#EBEBEB', '#DC5812'];
+    cells.forEach(function (row, y) {
+      row.forEach(function (v, x) { if (v) { mx.fillStyle = ink[v]; mx.fillRect(x, y, 1.02, 1.02); } });
+    });
+  })();
+
+  function rgb(c, a) { return a == null ? 'rgb(' + c.join(',') + ')' : 'rgba(' + c.join(',') + ',' + a + ')'; }
+
+  // seats strip
+  var seatEls = {};
+  L.AGENTS.forEach(function (a) {
+    var el = document.createElement('div');
+    el.className = 'seat';
+    el.innerHTML = '<span class="dot"></span><span><div class="nm"></div><div class="st"></div></span>';
+    el.querySelector('.nm').textContent = String(L.LABEL[a[0]] || a[0]).toUpperCase();
+    el.querySelector('.nm').style.color = rgb(L.COLOR[a[0]]);
+    $('seats').appendChild(el);
+    seatEls[a[0]] = { el: el, dot: el.querySelector('.dot'), st: el.querySelector('.st'), role: a[1] };
+  });
+
+  function fitCanvas() {
+    var dpr = window.devicePixelRatio || 1;
+    var cssW = canvas.clientWidth || W;
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssW * H / W * dpr);
+  }
+  window.addEventListener('resize', fitCanvas);
+  fitCanvas();
+
+  var warned = {};
+  function warnOnce(k, msg) { if (!warned[k]) { warned[k] = 1; console.warn('[live-mesh] ' + msg); } }
+  function hasPos(k, what) { if (pos[k]) return true; warnOnce(what + ':' + k, what + ' endpoint "' + k + '" has no node; skipped'); return false; }
+  function edgeMid(a, b) { return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - 20]; }
+  function bez(p0, p1, p2, p) {
+    var q = 1 - p;
+    return [q * q * p0[0] + 2 * q * p * p1[0] + p * p * p2[0], q * q * p0[1] + 2 * q * p * p1[1] + p * p * p2[1]];
+  }
+  function sameEdge(pk, a, b) { return (pk.src === a && pk.dst === b) || (pk.src === b && pk.dst === a); }
+
+  function fixNode(k) {
+    if (Object.prototype.hasOwnProperty.call(L.SATS, k)) return k;
+    return k === 'critic' && L.SATS.Reviewer ? 'Reviewer' : 'GitHub';   // forge (CI) and unknowns -> GitHub
+  }
+  // Flow direction: an event with a hop list travels hop by hop (A -> B -> C) over its ping time.
+  function hopPing(pk) {
+    var h = pk.e && pk.e.hops;
+    if (!h || h.length < 2) return pk;
+    var n = h.length - 1, p = Math.min(0.9999, Math.max(0, pk.p)), i = Math.floor(p * n);
+    pk.src = h[i]; pk.dst = h[i + 1]; pk.p = p * n - i;
+    return pk;
+  }
+  function fixPings(ps) {
+    return ps.map(function (pk) {
+      pk = hopPing(pk);
+      if (pk.e && pk.e.from === pk.e.to && !(pk.e.hops && pk.e.hops.length > 1)) pk.src = pk.dst = pk.e.from;   // one-node event
+      pk.src = fixNode(pk.src); pk.dst = fixNode(pk.dst);
+      var uc = L.liveColor && L.liveColor(pk.e); if (uc) pk.col = uc;   // checks: green / red / neutral
+      return pk;
+    });
+  }
+  // Fleet state from the feed: seat active = owned file changed or GitHub activity in the last 15 min
+  function fleetActive(k) {
+    var f = window.LIVE_FLEET, name = k === 'blinky' ? 'Coord' : k;
+    if (k === 'CloudAgents') return !!(f && f.cloud && f.cloud.active);   // open agent or cursoragent on GitHub
+    return !!(f && f.seats && f.seats[name] && f.seats[name].active);
+  }
+  // the one seat state for chip + node; views recorded for tests/debug (window.LIVE_SEAT_VIEWS)
+  var chipView = {}, nodeView = {}; window.LIVE_SEAT_VIEWS = { chip: chipView, node: nodeView };
+  function seatState(k, hot) { return L.seatState(fleetWorking(k), !!(hot && hot[k]), fleetActive(k)); }
+  function fleetStale(k) {   // seat state that came from the box while the box is not reporting
+    var f = window.LIVE_FLEET, name = k === 'blinky' ? 'Coord' : k;
+    if (k === 'CloudAgents') return !!(f && f.cloud && f.cloud.box_stale);
+    return !!(f && f.seats && f.seats[name] && f.seats[name].box_stale);
+  }
+  function fleetWorking(k) {   // in-flight spinner; not counted in N of M
+    var f = window.LIVE_FLEET, name = k === 'blinky' ? 'Coord' : k;
+    if (k === 'CloudAgents') return !!(f && f.cloud && f.cloud.working);
+    return !!(f && ((f.working && f.working[name]) || (f.seats && f.seats[name] && f.seats[name].working)));
+  }
+  // Live queue: new ids wait here until the view is live, then flash in time order (late ones tagged)
+  var LATE_MS = 2 * 60 * 1000, CATCHUP_MS = 30 * 60 * 1000, BATCH_MS = 9000;
+  var pendingFresh = [], liveStats = window.LIVE_LIVE_STATS = { queued: 0, played: 0, late: 0, history: 0 };
+  function queueFresh(list) { list.forEach(function (e) { pendingFresh.push(e); }); liveStats.queued += list.length; }
+  function playFresh() {
+    if (!state.live || !pendingFresh.length) return;
+    var now = Date.now(), seen = {}, list = [];
+    pendingFresh.sort(function (a, b) { return a._t - b._t; }).forEach(function (e) {
+      if (seen[e.id]) return; seen[e.id] = 1;
+      if (now - e._t > CATCHUP_MS) liveStats.history++; else list.push(e);
+    });
+    pendingFresh = [];
+    if (!list.length) return;
+    var step = list.length <= 12 ? STAGGER_MS : Math.max(90, BATCH_MS / list.length), t0 = performance.now();
+    flashes.forEach(function (f) { t0 = Math.max(t0, f.start + step); });   // after anything still queued
+    list.forEach(function (e, i) {
+      var late = now - e._t > LATE_MS;
+      flashes.push({ e: e, start: t0 + i * step, late: late, dur: FLASH_MS * Math.min(3, Math.max(1, (e.hops || []).length - 1)) });
+      liveStats.played++; if (late) liveStats.late++;
+    });
+  }
+  function fleetSilent(k) {
+    var f = window.LIVE_FLEET, name = k === 'blinky' ? 'Coord' : k;
+    return !!(f && f.seats && f.seats[name] && f.seats[name].silent);
+  }
+  function currentPings(nowWall) {
+    if (state.live) {
+      flashes = flashes.filter(function (f) { return nowWall - f.start < 2 * (f.dur || FLASH_MS); });   // kept one window after landing for seat status
+      return fixPings(flashes.filter(function (f) { return nowWall >= f.start && nowWall - f.start < (f.dur || FLASH_MS); }).map(function (f) {
+        var n = L.resolveNodes(f.e);
+        return { e: f.e, src: n[0], dst: n[1], p: (nowWall - f.start) / (f.dur || FLASH_MS), col: L.eventColor(f.e), late: f.late };
+      }));
+    }
+    return fixPings(L.pingsAt(state.events, state.t, L.PING_MS * speed));
+  }
+
+  // Ambient Replay loop: dimmed overlay replay on its own clock; never changes live state, pill, counts or seats
+  var AMBIENT_EVERY_MS = 10000, AMBIENT_MS = 5000, AMBIENT_WINDOW_MS = 5 * 60 * 1000, AMBIENT_ALPHA = 0.4;
+  var ambientOn = !reduced && !/[?&]replay=0(&|$)/.test(location.search);
+  var ambient = null, ambientNext = 0, ambientStats = window.LIVE_AMBIENT = { passes: 0, on: ambientOn };
+  // Live board: replayed packets leave a short fading rainbow tail whose hue cycles along the path (never live pings)
+  function replayTrail(a, m, b, p, nowWall) {
+    for (var k = 12; k >= 1; k--) {
+      var tq = bez(a, m, b, Math.max(0, p - k * 0.025)), hue = Math.round((p * 360 + k * 28 + nowWall * 0.12) % 360);
+      ctx.fillStyle = 'hsla(' + hue + ',95%,62%,' + ((13 - k) / 13 * 0.9).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(tq[0], tq[1], 1.5 + (13 - k) * 0.38, 0, 7); ctx.fill();
+    }
+  }
+  var specTagOn = false;
+  function ambientPings(nowWall) {
+    if (!ambientOn || !state.live || replay || document.hidden) { ambient = null; ambientNext = nowWall + AMBIENT_EVERY_MS; return []; }
+    if (!ambient) {
+      if (nowWall < ambientNext) return [];
+      ambientNext = nowWall + AMBIENT_EVERY_MS;
+      var now = Date.now(), shown = L.countUpTo(state.events, now);
+      if (!shown) return [];
+      var from = now - AMBIENT_WINDOW_MS;
+      if (shown - L.countUpTo(state.events, from) === 0) from = state.events[Math.max(0, shown - REPLAY_MIN_EVENTS)]._t - 1;
+      var end = Math.min(now, state.events[shown - 1]._t + 1);
+      ambient = { from: from, end: end, start: nowWall, sp: Math.max(1, (end - from) / AMBIENT_MS) };
+      ambientStats.passes++;
+    }
+    var k = (nowWall - ambient.start) / AMBIENT_MS;
+    if (k >= 1 || k < 0) { ambient = null; return []; }
+    return fixPings(L.pingsAt(state.events, ambient.from + k * (ambient.end - ambient.from), L.PING_MS * ambient.sp));
+  }
+  // 🌊 Board panel: cards / packets / beats from the feed header (feed.board, built by the feed pass from the
+  // same events; read-only). Grouped by stage; click a card for its packet and last 5 beats; a related live beat glows it.
+  var wb = { cards: [], stamp: '', key: '', open: {}, byKey: {}, glows: 0, kidsOpen: {}, pinsOpen: false, issuesOpen: {}, doneOpen: {} };
+  window.LIVE_WAVE = wb;
+  var WB_PACKET = ['goal', 'constraints', 'path', 'acceptance', 'evidence', 'next owner', 'escalate'];
+  var WB_BEAT_KINDS = /^(pr_open|issue_open|pr_commit|pr_force_push|pr_update|critic_|merged|lab_retest_|check_run|workflow_run|ci_)/;
+  function wbCt(t) {
+    try { var o = { timeZone: 'America/Chicago' }, d = new Date(t).toLocaleDateString('en-US', o) !== new Date().toLocaleDateString('en-US', o);
+      return (d ? new Date(t).toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric' }) + ' ' : '')
+        + new Date(t).toLocaleTimeString('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }) + ' CT'; } catch (e) { return ''; }
+  }
+  function wbAge(t) { if (!t) return '—'; var m = Math.max(0, Math.round((Date.now() - t) / 60000)); return m < 60 ? m + 'm' : m < 2880 ? Math.round(m / 60) + 'h' : Math.round(m / 1440) + 'd'; }
+  function wbEl(tag, cls, text) { var el = document.createElement(tag); if (cls) el.className = cls; if (text != null) el.textContent = text; return el; }
+  function wbSafeUrl(u) { return /^https:\/\/([a-z0-9-]+\.)*(github\.com|railway\.app|railway\.com|live\.ai)(\/|$)/i.test(u || '') ? u : ''; }
+  function cardSeat(c) {
+    var raw = (c.packet && c.packet['next owner']) || c.owner || '';
+    var k = L.liveNodeKey ? L.liveNodeKey(raw, null) : null;
+    return k || raw || 'other';
+  }
+  function cardWorking(c) {
+    if (!c || c.pinned || c.state === 'closed' || c.state === 'parked' || c.state === 'held' || c.stage === 'done') return false;
+    return fleetWorking(cardSeat(c));
+  }
+  function cleanTitle(c) { return String(c.title || '').replace(/^[\w.-]+ (issue|pr|PR) #\d+ opened · /, ''); }
+  function linkKids(cards) {
+    var byKey = {}, kids = {}, child = {};
+    cards.forEach(function (c) { byKey[c.key] = c; });
+    cards.forEach(function (c) {
+      if (c.kind !== 'issue' || c.pinned) return;
+      var m, re = /#(\d+)/g, t = cleanTitle(c);
+      while ((m = re.exec(t))) {
+        var pk = String(c.repo).toLowerCase() + '#' + Number(m[1]), p = byKey[pk];
+        if (p && p !== c && p.kind === 'pr' && p.state !== 'closed') { (kids[pk] = kids[pk] || []).push(c); child[c.key] = pk; return; }
+      }
+    });
+    return { kids: kids, child: child };
+  }
+  function byBeat(a, b) { return (b.last_beat_t || 0) - (a.last_beat_t || 0); }
+  function renderWave(force) {
+    var k = wb.stamp + ':' + Math.floor(Date.now() / 30000);
+    if (!force && k === wb.key) return; wb.key = k;
+    var body = $('waveBody'); body.textContent = ''; wb.byKey = {};
+    var S = wb.stats, strip = $('waveStats'); strip.textContent = '';
+    if (S) [['issues opened', S.issues_opened_24h], ['issues closed', S.issues_closed_24h], ['PRs opened', S.prs_opened_24h],
+      ['PRs merged', S.prs_merged_24h], ['PRs closed unmerged', S.prs_closed_unmerged_24h], ['open now', S.open_total]].forEach(function (x, i) {
+      var d = wbEl('span', 'wstat' + (i === 5 ? ' total' : '')); d.appendChild(wbEl('b', '', String(x[1] == null ? '–' : x[1]))); d.appendChild(wbEl('small', '', x[0] + (i < 5 ? ' 24h' : ''))); strip.appendChild(d); });
+    var live = 0, stalls = 0, held = 0;
+    wb.cards.forEach(function (c) {
+      if (c.pinned) return;
+      if (c.state === 'live') live++;
+      if (c.state === 'held') held++;
+      if (c.stall) stalls++;
+    });
+    var LK = linkKids(wb.cards);
+    var pins = wb.cards.filter(function (c) { return c.pinned; });
+    var inWork = wb.cards.filter(cardWorking).sort(byBeat);
+    if (!inWork.length) wb.pinsOpen = false;
+    function card(c) {
+      var li = wbEl('li', 'wcard ' + (c.state || 'live') + (c.packet_ok === false && !c.pinned ? ' nopacket' : '') + (c.stall ? ' stall' : '') + (wb.open[c.key] ? ' open' : ''));
+      li.dataset.key = c.key; wb.byKey[c.key] = li;
+      var top = wbEl('div', 'wtop');
+      var it = wbEl('span', 'witem', (c.number ? '#' + c.number + ' ' : '') + cleanTitle(c)); it.title = (c.repo ? c.repo + ' #' + c.number + ' ' : '') + (c.title || '');
+      if (cardWorking(c)) { var spin = wbEl('span', 'wspin'); spin.setAttribute('aria-label', 'in work'); top.appendChild(spin); }
+      top.appendChild(it); top.appendChild(wbEl('span', 'wage', c.pinned ? '' : wbAge(c.last_beat_t))); li.appendChild(top);
+      var meta = wbEl('div', 'wmeta');
+      meta.appendChild(wbEl('span', '', (c.owner || '-') + ' · ' + (c.pinned ? (c.section || 'pinned') : c.stage + (c.state !== 'live' ? ' · ' + c.state : ''))));
+      if (c.pinned) meta.appendChild(wbEl('span', 'wbadge pin', 'pinned'));
+      else if (c.packet_ok === false) meta.appendChild(wbEl('span', 'wbadge', 'no packet'));
+      if (c.state === 'held') meta.appendChild(wbEl('span', 'wbadge held', 'HELD'));
+      if (c.stall) meta.appendChild(wbEl('span', 'wbadge stall', 'stall 60m+'));
+      if (c.nudge) meta.appendChild(wbEl('span', 'wbadge nudge', '\u23F0 nudge L' + c.nudge));
+      li.appendChild(meta);
+      var det = wbEl('div', 'wdetail'), dl = wbEl('dl');
+      WB_PACKET.forEach(function (f) { var v = (c.packet || {})[f]; if (!v && !(f === 'acceptance' || f === 'next owner')) return;
+        dl.appendChild(wbEl('dt', '', f)); dl.appendChild(wbEl('dd', '', v || '— missing —')); });
+      if (c.hold && (c.hold.by || c.hold.reason || c.hold.until)) {
+        dl.appendChild(wbEl('dt', '', 'held by')); dl.appendChild(wbEl('dd', '', c.hold.by || '—'));
+        dl.appendChild(wbEl('dt', '', 'reason')); dl.appendChild(wbEl('dd', '', c.hold.reason || '—'));
+        if (c.hold.until) { dl.appendChild(wbEl('dt', '', 'until')); dl.appendChild(wbEl('dd', '', c.hold.until)); }
+      }
+      if (!c.pinned) det.appendChild(dl);
+      var ol = wbEl('ol', 'wbeats');
+      (c.beats || []).slice(-5).forEach(function (b) { ol.appendChild(wbEl('li', b.nudge ? 'nudge' : '', (b.nudge ? '\u23F0 ' : '') + wbCt(b.t) + ' · ' + b.what)); });
+      if ((c.beats || []).length) det.appendChild(ol);
+      var u = wbSafeUrl(c.url); if (u) { var a = wbEl('a', '', 'open on GitHub'); a.href = u; a.target = '_blank'; a.rel = 'noopener'; a.addEventListener('click', function (ev) { ev.stopPropagation(); }); det.appendChild(a); }
+      li.appendChild(det);
+      return li;
+    }
+    function put(ul, c) {
+      ul.appendChild(card(c));
+      var ks = LK.kids[c.key]; if (!ks || !ks.length) return;
+      var open = !!wb.kidsOpen[c.key];
+      var kh = wbEl('button', 'kidhead', (open ? '\u25BE ' : '\u25B8 ') + ks.length + ' linked issue' + (ks.length > 1 ? 's' : ''));
+      kh.type = 'button'; kh.setAttribute('aria-expanded', open ? 'true' : 'false');
+      kh.addEventListener('click', function (ev) { ev.stopPropagation(); wb.kidsOpen[c.key] = !wb.kidsOpen[c.key]; wb.key = ''; renderWave(true); });
+      ul.appendChild(kh);
+      var ku = wbEl('ul', open ? 'wkids' : 'wkids collapsed'); ks.sort(byBeat).forEach(function (k) { ku.appendChild(card(k)); }); ul.appendChild(ku);
+    }
+    if (inWork.length) {
+      body.appendChild(wbEl('div', 'wgroup', 'in work (' + inWork.length + ')'));
+      var wu = wbEl('ul', 'wcards'); inWork.forEach(function (c) { if (!LK.child[c.key]) put(wu, c); }); body.appendChild(wu);
+    }
+    if (pins.length) {
+      var collapsed = inWork.length && !wb.pinsOpen;
+      var head = wbEl('button', 'pinhead', 'pinned (' + pins.length + ')');
+      head.type = 'button'; head.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      head.addEventListener('click', function (ev) { ev.stopPropagation(); if (!inWork.length) return; wb.pinsOpen = !wb.pinsOpen; wb.key = ''; renderWave(true); });
+      body.appendChild(head);
+      var pu = wbEl('ul', collapsed ? 'wcards pins collapsed' : 'wcards pins');
+      pins.forEach(function (c) { pu.appendChild(card(c)); }); body.appendChild(pu);
+    }
+    var seats = [], bySeat = {};
+    wb.cards.forEach(function (c) {
+      if (c.pinned || cardWorking(c) || LK.child[c.key]) return;
+      var s = cardSeat(c);
+      if (!bySeat[s]) { bySeat[s] = []; seats.push(s); }
+      bySeat[s].push(c);
+    });
+    seats.sort(function (a, b) { return String(L.LABEL[a] || a).localeCompare(String(L.LABEL[b] || b)); });
+    var bucketName = { waiting: 'waiting on this seat', review: 'in review', held: 'held' };
+    seats.forEach(function (s) {
+      body.appendChild(wbEl('div', 'wgroup', L.LABEL[s] || s));
+      var buckets = { waiting: [], review: [], held: [], done: [] };
+      bySeat[s].forEach(function (c) {
+        var b = 'waiting';
+        if (c.state === 'closed' || c.state === 'parked' || c.stage === 'done') b = 'done';
+        else if (c.state === 'held') b = 'held';
+        else if (c.stage === 'review') b = 'review';
+        buckets[b].push(c);
+      });
+      ['waiting', 'review', 'held'].forEach(function (b) {
+        var cs = buckets[b].sort(byBeat); if (!cs.length) return;
+        body.appendChild(wbEl('div', 'wsub', bucketName[b] + ' (' + cs.length + ')'));
+        var prs = cs.filter(function (c) { return c.kind !== 'issue'; }), iss = cs.filter(function (c) { return c.kind === 'issue'; });
+        var ul = wbEl('ul', 'wcards'); prs.forEach(function (c) { put(ul, c); }); body.appendChild(ul);
+        if (!iss.length) return;
+        if (iss.length <= 3) { var su = wbEl('ul', 'wcards'); iss.forEach(function (c) { put(su, c); }); body.appendChild(su); return; }
+        var ik = s + ':' + b, io = !!wb.issuesOpen[ik];
+        var ih = wbEl('button', 'isshead', (io ? '\u25BE ' : '\u25B8 ') + iss.length + ' open issues');
+        ih.type = 'button'; ih.setAttribute('aria-expanded', io ? 'true' : 'false');
+        ih.addEventListener('click', function (ev) { ev.stopPropagation(); wb.issuesOpen[ik] = !wb.issuesOpen[ik]; wb.key = ''; renderWave(true); });
+        body.appendChild(ih);
+        var iu = wbEl('ul', io ? 'wcards issues' : 'wcards issues collapsed'); iss.forEach(function (c) { put(iu, c); }); body.appendChild(iu);
+      });
+      if (buckets.done.length) {
+        var open = !!wb.doneOpen[s];
+        var dh = wbEl('button', 'donehead', 'done (' + buckets.done.length + ')');
+        dh.type = 'button'; dh.setAttribute('aria-expanded', open ? 'true' : 'false');
+        dh.addEventListener('click', function (ev) { ev.stopPropagation(); wb.doneOpen[s] = !wb.doneOpen[s]; wb.key = ''; renderWave(true); });
+        body.appendChild(dh);
+        var du = wbEl('ul', open ? 'wcards done' : 'wcards done collapsed');
+        buckets.done.sort(byBeat).forEach(function (c) { du.appendChild(card(c)); }); body.appendChild(du);
+      }
+    });
+    $('waveCount').textContent = wb.cards.length ? live + ' live' + (held ? ' · ' + held + ' held' : '') + (stalls ? ' · ' + stalls + ' stalled' : '') : 'no cards';
+  }
+  $('waveBody').addEventListener('click', function (ev) {
+    var li = ev.target.closest('.wcard'); if (!li) return;
+    var k = li.dataset.key; wb.open[k] = !wb.open[k]; li.classList.toggle('open', !!wb.open[k]);
+  });
+  var wbSha = {}, wbShaLen = -1;
+  function wbKeyOf(e) {   // CI results carry a sha, not a number: map through the PR pushes the page already has
+    if (!e || !e.repo) return null;
+    var n = e.number, sha = e.sha || e.head_sha;
+    if (n == null && sha) {
+      if (wbShaLen !== state.events.length) { wbShaLen = state.events.length; wbSha = {};
+        state.events.forEach(function (x) { if (x.number != null && x.sha) wbSha[x.repo + '@' + String(x.sha).slice(0, 7)] = x.number; }); }
+      n = wbSha[e.repo + '@' + String(sha).slice(0, 7)];
+    }
+    return n == null ? null : String(e.repo).toLowerCase() + '#' + Number(n);
+  }
+  function waveGlow(e) {   // a related beat landed on the board: glow its card (live / parked cards only)
+    if (!WB_BEAT_KINDS.test(String(e.kind || ''))) return;
+    var li = wb.byKey[wbKeyOf(e)]; if (!li || li.classList.contains('closed')) return;
+    li.classList.remove('glow'); void li.offsetWidth; li.classList.add('glow'); wb.glows++;
+  }
+  $('waveToggle').addEventListener('click', function () {
+    var c = $('wave').classList.toggle('collapsed'); this.textContent = c ? 'Show' : 'Hide'; this.setAttribute('aria-expanded', String(!c));
+  });
+  function draw(nowWall, pings) {
+    var s = canvas.width / W;
+    var fs = Math.max(1, 0.55 / (canvas.clientWidth / W));   // keep labels readable on phones
+    var tt = nowWall / 1000;
+    ctx.setTransform(s, 0, 0, s, 0, 0);
+    ctx.fillStyle = '#04060c'; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = '#0a0e16'; ctx.lineWidth = 1;
+    for (var gx = 0; gx < W; gx += 24) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke(); }
+    for (var gy = 0; gy < H; gy += 24) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke(); }
+    // hub orbit
+    orbit += L.orbitStep(lastDraw == null ? 0 : Math.min(250, nowWall - lastDraw), pings, reduced); lastDraw = nowWall;
+    ctx.fillStyle = '#283750';
+    for (var n = 0; n < 40; n++) {
+      var ang = n / 40 * Math.PI * 2 + orbit, rr = 30 + (n % 6) * 12;
+      ctx.fillRect(L.HUB[0] + Math.cos(ang) * rr, L.HUB[1] + Math.sin(ang) * rr * 0.6, 1.5, 1.5);
+    }
+    var span = L.PING_MS * speed;
+    var hot = state.live ? L.activeSeats(flashes, nowWall, FLASH_MS, true)
+      : L.activeSeats(L.recentItems(state.events, state.t, 2 * span), state.t, span, false);
+    Object.keys(L.SATS).forEach(function (k) {
+      var o = L.SQUARE[k] ? [0, 0] : L.bob(k, nowWall, reduced);
+      pos[k] = [L.SATS[k][0] + o[0], L.SATS[k][1] + o[1]];
+    });
+    // edges + ambient traffic
+    L.EDGES.forEach(function (ed) {
+      if (!hasPos(ed[0], 'edge') || !hasPos(ed[1], 'edge')) return;
+      var a = pos[ed[0]], b = pos[ed[1]], m = edgeMid(a, b);
+      var live = pings.some(function (pk) { return sameEdge(pk, ed[0], ed[1]); });
+      ctx.strokeStyle = live ? '#375a78' : '#162032'; ctx.lineWidth = live ? 2 : 1;
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.quadraticCurveTo(m[0], m[1], b[0], b[1]); ctx.stroke();
+      var gp = L.wireGlow(nowWall, ((L.SATS[ed[0]][0] + L.SATS[ed[1]][1] * 3) % 89) / 89, reduced);
+      if (gp != null) {   // soft current gliding along the solid wire (not packets, no dash)
+        [[6, 0.07], [2.5, 0.16]].forEach(function (g) {
+          ctx.beginPath();
+          for (var gi = 0; gi <= 10; gi++) { var gq = bez(a, m, b, Math.min(1, Math.max(0, gp - 0.07 + gi * 0.014))); if (gi) ctx.lineTo(gq[0], gq[1]); else ctx.moveTo(gq[0], gq[1]); }
+          ctx.strokeStyle = 'rgba(140,185,245,' + g[1] + ')'; ctx.lineWidth = g[0]; ctx.lineCap = 'round'; ctx.stroke();
+        });
+        ctx.lineCap = 'butt';
+      }
+      var ca = L.COLOR[ed[0]], cb = L.COLOR[ed[1]];
+      var col = [0, 1, 2].map(function (i) { return (ca[i] + cb[i]) >> 1; });
+      var tr = L.edgeTraffic(live);
+      if (!tr) return;
+      var count = tr.count, sp = tr.speed, size = tr.size;
+      var off = ((a[0] + b[0] * 3 + a[1] * 7) % 97) / 97;
+      for (var i = 0; i < count; i++) {
+        var p = (tt * sp + off + i / count) % 1, q = bez(a, m, b, p);
+        ctx.fillStyle = rgb(col, tr.alpha);
+        ctx.beginPath(); ctx.arc(q[0], q[1], size, 0, 7); ctx.fill();
+      }
+    });
+    // pings in flight: dimmed ambient replay underneath, real live pings on top at full brightness
+    var ghosts = ambientPings(nowWall); ambientStats.drawing = ghosts.length;
+    var tagOn = !!ambient || !!replay;   // replay pass running: tag beside the pill (the pill itself is untouched)
+    if (tagOn !== specTagOn) { specTagOn = tagOn; $('specTag').classList.toggle('on', tagOn); }
+    if (!reduced) { ghosts.forEach(function (g) { g.live = true; }); if (replay) pings.forEach(function (g) { g.live = true; }); }
+    if (ghosts.length) { ctx.globalAlpha = AMBIENT_ALPHA; ghosts.forEach(drawPing); ctx.globalAlpha = 1; }
+    pings.forEach(drawPing);
+    function drawPing(pk) {
+      if (!hasPos(pk.src, 'ping') || !hasPos(pk.dst, 'ping')) return;
+      if (pk.src === pk.dst) {   // one-node event (e.g. a check with no PR author): a ring pulse on the node
+        var c0 = pos[pk.src]; ctx.strokeStyle = rgb(pk.col, Math.max(0, 1 - pk.p)); ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(c0[0], c0[1], 24 + 22 * pk.p, 0, 7); ctx.stroke(); return;
+      }
+      var a = pos[pk.src], b = pos[pk.dst], m = edgeMid(a, b);
+      var p = Math.min(1, Math.max(0, pk.p)); p = p * p * (3 - 2 * p);
+      if (pk.live) replayTrail(a, m, b, p, nowWall);
+      else for (var k = 5; k >= 1; k--) {
+        var tq = bez(a, m, b, Math.max(0, p - k * 0.04));
+        ctx.fillStyle = rgb(pk.col, (6 - k) / 6); ctx.beginPath(); ctx.arc(tq[0], tq[1], 6 - k, 0, 7); ctx.fill();
+      }
+      var q = bez(a, m, b, p);
+      ctx.fillStyle = rgb(pk.col); ctx.beginPath(); ctx.arc(q[0], q[1], 9, 0, 7); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(q[0], q[1], 3, 0, 7); ctx.fill();
+      if (pk.late) { ctx.font = '600 9px ui-monospace, monospace'; ctx.fillStyle = 'rgba(255,214,120,.85)'; ctx.fillText('late', q[0] + 8, q[1] - 13); }
+    }
+    // hub
+    ctx.fillStyle = '#121622'; ctx.strokeStyle = '#e6ebff'; ctx.lineWidth = 3;
+    roundRect(L.HUB[0] - 30, L.HUB[1] - 24, 60, 48, 8); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#f0f5ff'; ctx.font = 'bold ' + 16 * fs + 'px system-ui, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('mesh', L.HUB[0], L.HUB[1]);
+    // nodes
+    var since = nowWall - t0Page;
+    Object.keys(L.SATS).forEach(function (key, i) {
+      var pul = 0;
+      pings.forEach(function (pk) { if (pk.src === key) pul = Math.max(pul, L.pulse(pk.p * L.PULSE_MS, reduced)); });
+      ctx.globalAlpha = L.entry(since, i, reduced);
+      var nv = L.seatView(seatState(key, hot)); nodeView[key] = nv;   // same state as the header chip
+      drawNode(key, nv.lit, fs, pul, nv.nodeWorking, nowWall);
+
+      ctx.globalAlpha = 1;
+    });
+    return hot;
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+
+  function drawNode(key, isHot, fs, pul, spinning, nowWall) {
+    var xy = pos[key], x = xy[0], y = xy[1], c = L.COLOR[key], sq = !!L.SQUARE[key], r = sq ? 15 : 18 + 3 * pul;
+    var img = imgs[key], glyph = L.GLYPH[key], mark = L.MARK_PATH[key];
+    var hasImg = !!(img && img.complete && img.naturalWidth);
+    var bare = hasImg || (!sq && !!glyph);   // image / glyph nodes: no ring
+    if (isHot && !bare) {
+      for (var k = 3; k >= 1; k--) {
+        var rr = r + k * 5; ctx.strokeStyle = rgb(c, 1 / (k + 1)); ctx.lineWidth = 2;
+        if (sq) { roundRect(x - rr, y - rr, rr * 2, rr * 2, 6); } else { ctx.beginPath(); ctx.arc(x, y, rr, 0, 7); }
+        ctx.stroke();
+      }
+    }
+    ctx.fillStyle = '#0c101c'; ctx.strokeStyle = rgb(c); ctx.lineWidth = isHot ? 3 : 2;
+    if (hasImg) {   // avatar: the image as-is, no circle / ring / border / clip
+      var as = 46 + 4 * pul; ctx.drawImage(img, x - as / 2, y - as / 2, as, as);
+    }
+    else if (mark && typeof Path2D !== 'undefined') {   // vector mark, light fill (no font, no fetch)
+      ctx.save(); ctx.translate(x - 15, y - 15); ctx.scale(30 / 16, 30 / 16);
+      ctx.fillStyle = '#f0f5ff'; ctx.fill(new Path2D(mark)); ctx.restore();
+    }
+    else if (glyph) {
+      if (!sq && isHot) { ctx.fillStyle = rgb(c, 0.22); ctx.beginPath(); ctx.arc(x, y, r + 6, 0, 7); ctx.fill(); }   // seat glow, no circle
+      ctx.fillStyle = '#f0f5ff'; ctx.font = 'bold 30px system-ui, "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Segoe UI Symbol", "Noto Sans Math", sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(glyph, x, y + 1);
+    }
+    else if (sq) { roundRect(x - r, y - r, r * 2, r * 2, 5); ctx.fill(); ctx.stroke(); ctx.fillStyle = rgb(c); ctx.fillRect(x - 5, y - 5, 10, 10); }
+    else {
+      if (pul > 0) { ctx.fillStyle = rgb(c, 0.25 * pul); ctx.beginPath(); ctx.arc(x, y, r + 8 * pul, 0, 7); ctx.fill(); ctx.fillStyle = '#0c101c'; }
+      if (bare) {   // the image itself; LIVE = soft seat-colour glow, no outline
+        if (isHot) { ctx.fillStyle = rgb(c, 0.22); ctx.beginPath(); ctx.arc(x, y, r + 6, 0, 7); ctx.fill(); }
+        ctx.save(); ctx.beginPath(); ctx.arc(x, y, r + 2, 0, 7); ctx.clip();
+        ctx.drawImage(img, x - r - 2, y - r - 2, r * 2 + 4, r * 2 + 4); ctx.restore();
+      } else {
+        ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+        ctx.fillStyle = rgb(c); ctx.font = 'bold ' + 16 + 'px system-ui, sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(L.badgeLetter(key), x, y + 1);
+        ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.stroke();   // ring only on letter seats
+      }
+    }
+    if (hasImg) r = 25; else if (!sq) r = 18;
+    var title = L.LABEL[key], sub = L.SUB[key];
+    ctx.font = 'bold ' + 14 * fs + 'px system-ui, sans-serif';
+    var tw = ctx.measureText(title).width;
+    ctx.font = 11 * fs + 'px system-ui, sans-serif';
+    var w = Math.max(tw, ctx.measureText(sub).width) + 16, h = (title ? 30 : 17) * fs, top = y + r + 4;
+    var silentNow = !spinning && fleetSilent(key);
+    if (silentNow) {   // amber 'silent 2h' under the icon, amber frame below
+      ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillStyle = '#f59e0b'; ctx.fillText('silent 2h', x, top); top += 14;
+    }
+    if (spinning) {   // 'working' under the icon: seat-color sheen sweeping L->R
+      ctx.font = '600 10px ui-monospace, SFMono-Regular, Menlo, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      var wtxt = 'working', ww = ctx.measureText(wtxt).width;
+      ctx.fillStyle = rgb(c, 0.45); ctx.fillText(wtxt, x, top);
+      ctx.save();
+      var band = Math.max(10, ww * 0.38), travel = ww + band;
+      var bx = x - ww / 2 + ((nowWall / 1200) % 1) * travel - band;
+      ctx.beginPath(); ctx.rect(bx, top - 1, band, 13); ctx.clip();
+      ctx.fillStyle = rgb(c); ctx.fillText(wtxt, x, top);
+      ctx.restore();
+      top += 14;
+    }
+    ctx.fillStyle = '#101420'; ctx.strokeStyle = silentNow ? '#f59e0b' : rgb(c); ctx.lineWidth = 2;
+    roundRect(x - w / 2, top, w, h, 6); ctx.fill(); ctx.stroke();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillStyle = rgb(c); ctx.font = 'bold ' + 14 * fs + 'px system-ui, sans-serif'; ctx.fillText(title, x, top + 2 * fs);
+    ctx.fillStyle = '#96a0b4'; ctx.font = 11 * fs + 'px system-ui, sans-serif'; ctx.fillText(sub, x, top + (title ? 17 : 3) * fs);
+  }
+
+  var lastText = 0, lastLogKey = '';
+  function updateText(nowWall, hot) {
+    renderWave();
+    flashes.forEach(function (f) { if (!f.landed && nowWall - f.start >= (f.dur || FLASH_MS)) { f.landed = 1; waveGlow(f.e); } });
+    var shown = L.countUpTo(state.events, state.t);
+    var cur = shown ? state.events[shown - 1] : null;
+    $('head').textContent = cur ? L.headline(cur) : '\u00a0';
+    $('headTime').textContent = cur ? L.fmtCt(cur._t) + (state.live ? '' : replay ? ' · replay' : ' · rewound') : '\u00a0';
+    L.AGENTS.forEach(function (a) {
+      var s = seatEls[a[0]], c = L.COLOR[a[0]], v = L.seatView(seatState(a[0], hot)), on = v.lit;
+      chipView[a[0]] = v;
+      s.el.classList.toggle('live', on);
+      s.dot.style.background = on ? rgb(c) : '#283246';
+      s.dot.style.boxShadow = on ? '0 0 0 2px #04060c, 0 0 0 4px ' + rgb(c) : 'none';
+      s.st.textContent = s.role + ' · ' + v.word;   // WORKING > LIVE > ACTIVE > IDLE (one state)
+      var sil = !v.blink && fleetSilent(a[0]); if (sil) s.st.textContent += ' · silent 2h';
+      s.el.classList.toggle('silent', sil); if (sil) s.dot.style.background = '#f59e0b';
+      var spinning = v.blink;
+      s.el.classList.toggle('working', spinning);
+      // header chip: the existing status dot blinks in the seat color while working; the canvas node shows
+      // the rolling-sheen 'working' label from the same state
+      s.dot.classList.toggle('blink', spinning);
+      if (spinning) s.dot.style.background = rgb(c);
+      if (spinning) s.el.setAttribute('aria-label', a[0] + ' working'); else s.el.removeAttribute('aria-label');
+      var stale = fleetStale(a[0]);   // box-sourced state while the box is silent: shown dimmed, not hidden
+      s.el.classList.toggle('stale', stale);
+      if (stale) s.el.title = 'box signals stale (box not reporting); GitHub signals still live'; else s.el.removeAttribute('title');
+    });
+    var logKey = shown + ':' + state.events.length;
+    if (logKey !== lastLogKey) { lastLogKey = logKey; renderLog(shown); }
+    if (nowWall - lastText < 500) return;
+    lastText = nowWall;
+    var now = Date.now(), b = L.bounds(state.events, now);
+    var slider = $('slider');
+    slider.min = b[0]; slider.max = b[1];
+    if (!dragging || state.live) slider.value = state.live ? b[1] : state.t;
+    $('tLabel').textContent = state.live ? 'now · ' + L.fmtCt(now) : L.fmtCt(state.t);
+    $('live').classList.toggle('on', state.live);
+    $('pill').textContent = (function () {
+      if (replay) return 'REPLAY';
+      if (!state.live) return 'REWOUND';
+      var age = state.generatedAt ? (now - state.generatedAt) / 1000 : 1e9;
+      if (age <= 90) return 'LIVE';
+      var m = Math.max(1, Math.round(age / 60));
+      return 'behind ' + m + ' min';
+    })();
+    var behind = state.live && !replay && state.generatedAt && (now - state.generatedAt) > 90000;
+    $('pill').classList.toggle('off', !state.live && !replay && !behind);
+    $('pill').classList.toggle('replay', !!replay);
+    $('pill').classList.toggle('behind', !!behind);
+    $('fleet').textContent = L.fleetLine(hot);
+    $('blackout').textContent = L.blackoutLine(now);
+    $('play').innerHTML = L.isPlaying(state.live, playing) ? '&#10074;&#10074; Pause' : '&#9654; Play';
+    var seatNames = (window.LIVE_FLEET && window.LIVE_FLEET.seats) ? Object.keys(window.LIVE_FLEET.seats) : L.SEAT_NAMES;
+    var bots = seatNames.filter(function (k) { return L.own(hot, k) || fleetActive(k); }).length;
+    var total = window.LIVE_FEED_TOTAL != null ? window.LIVE_FEED_TOTAL : state.events.length;
+    var st = state.generatedAt ? 'Updated <b title="' + L.fmtCt(state.generatedAt) + '">' + L.ago(now - state.generatedAt) + '</b>' : 'Waiting for feed';
+    st += ' · ' + Number(total).toLocaleString('en-US') + ' events · ' + bots + ' of ' + seatNames.length + ' bots active';
+    if (fetchError) st += ' · <span style="color:#ff6e5a">' + fetchError + '</span>';
+    $('status').innerHTML = st;
+  }
+
+  function renderLog(shown) {
+    var ul = $('log'); ul.textContent = '';
+    for (var i = shown - 1; i >= Math.max(0, shown - 14); i--) {
+      var e = state.events[i];
+      var li = document.createElement('li');
+      li.dataset.t = e._t;
+      var when = document.createElement('span'); when.className = 'when'; when.textContent = L.fmtCt(e._t).replace(' CT', '');
+      var who = document.createElement('span'); who.className = 'who'; who.textContent = L.whoTag(e); who.style.color = rgb(L.eventColor(e));
+      var a = document.createElement('a'); a.textContent = L.cleanLabel(e.label);
+      if (/^https:\/\//.test(e.source || '')) { a.href = e.source; a.target = '_blank'; a.rel = 'noopener'; }
+      li.appendChild(when); li.appendChild(who); li.appendChild(a);
+      ul.appendChild(li);
+    }
+  }
+
+  function goLive() { endReplay(); state.live = true; setTimeout(playFresh, 0); playing = false; state.t = Date.now(); lastText = 0; }
+  function rewindTo(t) { endReplay(); state.live = false; flashes = []; state.t = t; lastText = 0; }
+
+  $('live').addEventListener('click', goLive);
+  $('ambient').checked = ambientOn; $('ambient').disabled = reduced;
+  if (reduced) $('ambient').parentNode.title = 'Replay loop is off (reduced motion)';
+  $('ambient').addEventListener('change', function (ev) { ambientOn = ambientStats.on = !reduced && ev.target.checked; ambient = null; });
+  $('play').addEventListener('click', function () {
+    endReplay();
+    if (state.live) { rewindTo(Date.now()); playing = false; return; }
+    if (playing) { playing = false; lastText = 0; return; }
+    playing = true; lastText = 0;
+  });
+  $('speed').addEventListener('change', function (ev) { endReplay(); speed = Number(ev.target.value) || 600; });
+  $('slider').addEventListener('input', function (ev) {
+    var v = Number(ev.target.value), b = L.bounds(state.events, Date.now());
+    if (L.sliderAction(v, b) === 'live') goLive(); else { rewindTo(v); playing = true; }
+  });
+  $('slider').addEventListener('pointerdown', function () { dragging = true; });
+  window.addEventListener('pointerup', function () { dragging = false; });
+  $('log').addEventListener('click', function (ev) {
+    if (ev.target.tagName === 'A' && ev.target.href) return;
+    var li = ev.target.closest('li');
+    if (li) { rewindTo(Number(li.dataset.t)); playing = false; }
+  });
+
+  function frame(nowWall) {
+    var dt = Math.min(250, nowWall - lastFrame); lastFrame = nowWall;
+    if (state.live) state.t = Date.now();
+    else if (playing) {
+      state.t += dt * speed;
+      if (state.t >= Date.now() || (replay && state.t >= replay.end)) goLive();
+    }
+    try {
+      var pings = currentPings(nowWall);
+      var hot = draw(nowWall, pings);
+      canvas.classList.add('in');
+      updateText(nowWall, hot);
+    } catch (err) { warnOnce('frame:' + err.message, 'frame error (loop continues): ' + err.message); }
+    requestAnimationFrame(frame);
+  }
+
+  var first = true;
+  function poll() {
+    if (document.hidden && !first) return;
+    L.fetchFeed(window.fetch.bind(window), Date.now(), mem).then(function (r) {
+      source = r.source; fetchError = '';
+      if (!r.feed) return;
+      var out = L.applyFeed(state, r.feed, Date.now());
+      state = out.state;
+      if (r.feed.board && Array.isArray(r.feed.board.cards)) { var ws = JSON.stringify(r.feed.board.cards); wb.stats = r.feed.board.stats || null; ws += JSON.stringify(wb.stats); if (ws !== wb.stamp) { wb.cards = r.feed.board.cards; wb.stamp = ws; wb.key = ''; } }
+      var isNew = {}; out.added.forEach(function (id) { isNew[id] = 1; });
+      var fresh = first ? state.events.slice(-6) : state.events.filter(function (e) { return isNew[e.id]; });
+      if (first && !reduced && startReplay()) fresh = [];   // live replaces the first-load flashes
+      queueFresh(fresh);
+      if (state.live) playFresh();
+      first = false; lastText = 0; lastLogKey = '';
+    }).catch(function (err) { fetchError = 'feed fetch failed, retrying'; lastText = 0; console.warn(err); });
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) poll(); });
+  poll();
+  setInterval(poll, L.POLL_MS);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
