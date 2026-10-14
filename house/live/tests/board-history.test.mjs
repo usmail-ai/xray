@@ -92,25 +92,27 @@ async function stop(child) {
   await done;
 }
 
-test('merge-commit CI does not move the card clock; CI on an open head does; the queue does not delete the inbox', async () => {
+test('a CI push after a merge does not move the card clock; the queue does not delete the inbox', async () => {
   const data = fs.mkdtempSync(path.join(os.tmpdir(), 'board-ci-'));
   const now = Date.now();
   const opened = new Date(now - 70 * 60 * 1000).toISOString();
+  const mergedAt = new Date(now - 40 * 60 * 1000).toISOString();
   const onHead = new Date(now - 20 * 60 * 1000).toISOString();
-  const mergeCi = new Date(now - 2 * 60 * 1000).toISOString();
-  const closedNum = new Date(now - 60 * 1000).toISOString();
+  const onNumber = new Date(now - 10 * 60 * 1000).toISOString();
+  const mergeCi = new Date(now - 60 * 1000).toISOString();
   fs.mkdirSync(path.join(data, 'feed'), { recursive: true });
   fs.writeFileSync(path.join(data, 'feed', 'github-events.json'), JSON.stringify({
     generated_at: new Date().toISOString(),
     board: { cards: [
-      { key: 'example/repo#7', repo: 'example/repo', number: 7, kind: 'pr', state: 'live', title: 'Open', head: 'deadbee', owner: 'builder', stage: 'review', last_beat_t: now - 20 * 60 * 1000 },
+      { key: 'example/repo#7', repo: 'example/repo', number: 7, kind: 'pr', state: 'live', title: 'Open', head: 'deadbee', owner: 'builder', stage: 'review', last_beat_t: now - 40 * 60 * 1000 },
       { key: 'example/repo#8', repo: 'example/repo', number: 8, kind: 'pr', state: 'closed', title: 'Merged', head: 'c10sed1', owner: 'builder', stage: 'done' },
     ] },
     events: [
       { id: 'gh-open', t_ct: opened, kind: 'pr_open', repo: 'example/repo', number: 7, title: 'Open', from: 'builder', sha: 'deadbee0123456789abcdef' },
+      { id: 'gh-merged', t_ct: mergedAt, kind: 'merged', repo: 'example/repo', number: 7, title: 'Open', from: 'builder', sha: 'abc9999deadbeef000000000' },
       { id: 'gh-head', t_ct: onHead, kind: 'check_run', conclusion: 'success', repo: 'example/repo', sha: 'deadbee0123456789abcdef', from: 'GitHub' },
+      { id: 'gh-num', t_ct: onNumber, kind: 'ci_pass', conclusion: 'success', repo: 'example/repo', number: 7, from: 'GitHub' },
       { id: 'gh-merge', t_ct: mergeCi, kind: 'check_run', conclusion: 'success', repo: 'example/repo', sha: 'abc9999deadbeef000000000', from: 'GitHub' },
-      { id: 'gh-closed', t_ct: closedNum, kind: 'ci_pass', conclusion: 'success', repo: 'example/repo', number: 8, from: 'GitHub' },
     ],
   }));
   const srv = start(data);
@@ -119,8 +121,8 @@ test('merge-commit CI does not move the card clock; CI on an open head does; the
     const login = await fetch(srv.base + '/login', { method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'password=' + encodeURIComponent(srv.password) });
     const cookie = (login.headers.get('set-cookie') || '').split(';')[0];
     const live = await (await fetch(srv.base + '/live-events.json', { headers: { Cookie: cookie } })).json();
-    assert.equal(Date.parse(live.freshness.github_latest_ct), Date.parse(closedNum));
-    assert.equal(Date.parse(live.freshness.github_card_latest_ct), Date.parse(onHead));
+    assert.equal(Date.parse(live.freshness.github_latest_ct), Date.parse(mergeCi));
+    assert.equal(Date.parse(live.freshness.github_card_latest_ct), Date.parse(mergedAt));
     const line = { id: 'line-1', t_ct: new Date().toISOString(), seat: 'forge', type: 'pr', repo: 'example/repo', number: 7, title: 'Needs a look', url: 'https://github.com/example/repo/pull/7', reason: 'review' };
     const posted = await fetch(srv.base + '/inbox', { method: 'POST', headers: { 'X-Live-Ingest': srv.ingest, 'Content-Type': 'application/json' }, body: JSON.stringify({ lines: [line] }) });
     assert.equal(posted.status, 200, await posted.text());

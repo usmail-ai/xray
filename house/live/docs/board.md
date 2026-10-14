@@ -99,7 +99,7 @@ The wake / read / ack times are kept in server memory (`app/presence.mjs` `foldS
 
 ## Freshness
 
-The light at the top uses two times from the feed `freshness` object. `github_latest_ct` is the newest GitHub event of any kind. `github_card_latest_ct` is the newest event that both moves a card and lands on an open card (`repo#number`, or a 7-character sha against that card's `head`). A comment, a check that is still running, an ordinary label, or CI on a merge commit (no pull request number, sha no open card owns) does not turn the light. `/healthz` `data_age` is seconds since `github_latest_ct`.
+The light at the top uses two times from the feed `freshness` object. `github_latest_ct` is the newest GitHub event of any kind. `github_card_latest_ct` is the newest non-CI event that moves a card and lands on an open card (`repo#number`). CI (`check_run`, `workflow_run`, `ci_pass`, `ci_fail`) does not move it, including a check that runs after a merge. A comment, a check that is still running, or an ordinary label does not turn the light. `/healthz` `data_age` is seconds since `github_latest_ct`.
 
 Until the first card write the light says "Cards still building".
 

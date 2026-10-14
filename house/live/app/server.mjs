@@ -1071,17 +1071,13 @@ function repoTimes(f) {
   }
 }
 const ageS = t => (t > 0 ? Math.max(0, Math.round((Date.now() - t) / 1000)) : null);
-function sha7(v) {
-  const hex = String(v || '').toLowerCase().replace(/[^0-9a-f]/g, '');
-  return hex.length >= 7 ? hex.slice(0, 7) : '';
-}
 function eventMovesCard(e) {
   if (!e || typeof e !== 'object') return false;
   const k = typeof e.kind === 'string' ? e.kind : '';
   if (/watcher|turn|subagent/.test(k)) return false;
+  if (k === 'check_run' || k === 'workflow_run' || k === 'ci_pass' || k === 'ci_fail') return false;
   if (k === 'pr_open' || k === 'issue_open' || k === 'pr_commit' || k === 'pr_force_push' || k === 'pr_update' || k === 'merged') return true;
   if (k.startsWith('critic_')) return true;
-  if ((k === 'check_run' || k === 'workflow_run' || k === 'ci_pass' || k === 'ci_fail') && (e.conclusion || k.startsWith('ci_'))) return true;
   if (k.startsWith('lab_retest_')) return true;
   if (k.startsWith('prompt') && e.from === 'Lead') return true;
   if ((k === 'issue_labeled' || k === 'pr_labeled') && /block/i.test(String(e.detail || ''))) return true;
@@ -1090,7 +1086,6 @@ function eventMovesCard(e) {
 }
 function openCardIndex() {
   const keys = new Set();
-  const heads = new Set();
   for (const c of bfCards) {
     if (!c || typeof c !== 'object' || c.kind === 'source' || c.state === 'closed') continue;
     let repo = typeof c.repo === 'string' ? c.repo.trim().toLowerCase() : '';
@@ -1101,20 +1096,14 @@ function openCardIndex() {
     }
     if (!(repo && Number.isInteger(n) && n > 0)) continue;
     keys.add(repo + '#' + n);
-    const head = sha7(c.head);
-    if (head) heads.add(repo + '@' + head);
   }
-  return { keys, heads };
+  return { keys };
 }
 function eventOnOpenCard(e, open) {
   const repo = e && typeof e.repo === 'string' ? e.repo.trim().toLowerCase() : '';
   if (!repo) return false;
   const n = Number(e.number);
-  if (e.number != null && e.number !== '' && Number.isInteger(n) && n > 0) return open.keys.has(repo + '#' + n);
-  const k = typeof e.kind === 'string' ? e.kind : '';
-  if (k !== 'check_run' && k !== 'workflow_run' && k !== 'ci_pass' && k !== 'ci_fail') return false;
-  const sha = sha7(e.sha || e.head_sha);
-  return !!sha && open.heads.has(repo + '@' + sha);
+  return e.number != null && e.number !== '' && Number.isInteger(n) && n > 0 && open.keys.has(repo + '#' + n);
 }
 function recomputeGithubDataAt() {
   const open = openCardIndex();

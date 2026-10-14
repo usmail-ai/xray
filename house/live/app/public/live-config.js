@@ -193,8 +193,8 @@
     if (h < 48) return h + ' h';
     return Math.round(h / 24) + ' d';
   }
-  // dataAt is the newest GitHub event. moveAt is the newest event that lands on an open card.
-  // A comment, a running check, an ordinary label, or CI on a merge commit does not turn the light.
+  // dataAt is the newest GitHub event. moveAt is the newest non-CI event that lands on an open card.
+  // CI does not move the light. A comment, a running check, or an ordinary label does not either.
   L.freshTone = function (dataAt, cardsAt, moveAt, now) {
     if (!(cardsAt > 0)) return { tone: 'amber', line: 'Cards still building' };
     if (!(dataAt > 0)) return { tone: 'amber', line: 'No GitHub activity yet' };
