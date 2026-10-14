@@ -110,6 +110,15 @@
     @keyframes wglow { 0% { box-shadow: 0 0 0 2px #ffd166, 0 0 18px #ffd16699; } 100% { box-shadow: none; } }
     @media (prefers-reduced-motion: reduce) { .wcard.glow { animation: none; outline: 2px solid #ffd166; } }
     @media (max-width: 900px) { .split { grid-template-columns: 1fr; } #waveToggle { display: inline-block; } .wave.collapsed .wave-body { display: none; } .wave { max-height: none; } }
+    .fresh { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 8px; font-weight: 600; }
+    .fresh-dot { width: 10px; height: 10px; border-radius: 50%; background: #8c96b4; flex: none; }
+    .fresh.green .fresh-dot { background: #3dd68c; }
+    .fresh.amber .fresh-dot { background: #f5b942; }
+    .fresh.red .fresh-dot { background: #ff5a4f; }
+    #cardRecent, #queueBox, #cardHist { margin-top: 8px; border-top: 1px solid #111a2a; padding-top: 6px; }
+    #cardRecentList, #queueList, #cardHistList { list-style: none; margin: 4px 0 0; padding: 0; }
+    #cardRecentList li, #queueList li, #cardHistList li { padding: 3px 0; border-top: 1px solid #111a2a; font-size: 12px; }
+    #cardHistAll, #historyDay { font: inherit; font-size: 11px; }
     .seat.silent .st, .silent .st { color: #fbbf24; }
     .ambient-toggle { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #a99bff; cursor: pointer; }
     button, select { background: #10182a; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font: inherit; cursor: pointer; }
@@ -141,7 +150,8 @@
 <main>
   <header>
     <div class="title"><h1>🌈 Live board</h1><span class="pill" id="pill">LIVE</span><span class="spec-tag" id="specTag" aria-hidden="true">🪞 REPLAY</span></div>
-    <p class="status" id="status">Loading feed…</p>
+    <p class="status" id="status">Loading…</p>
+    <p class="fresh" id="fresh"><span class="fresh-dot"></span><span id="freshText">Loading…</span></p>
     <div hidden><canvas id="mark" width="112" height="44"></canvas><b id="fleet"></b><span id="blackout"></span></div>
   </header>
 
@@ -161,6 +171,17 @@
     <div class="wave-head"><b>🌊 Board</b><span id="waveCount"></span><button id="waveToggle" type="button" aria-expanded="false" aria-controls="waveBody">Show</button></div>
     <div class="wave-stats" id="waveStats" aria-label="last 24 h and open now"></div>
     <div class="wave-body" id="waveBody"></div>
+    <div id="cardRecent" aria-label="Recent card changes">
+      <div class="lens-head"><b>Recent changes</b><button id="cardHistAll" type="button">See all history</button></div>
+      <ul id="cardRecentList"></ul>
+    </div>
+    <div id="cardHist" hidden>
+      <ul id="cardHistList"></ul>
+    </div>
+    <div id="queueBox" aria-label="Open queue">
+      <div class="lens-head"><b id="queueLabel">Queue · waiting for a reply</b></div>
+      <ul id="queueList"></ul>
+    </div>
   </aside>
   </div>
 
@@ -179,7 +200,7 @@
   </section>
 
   <section class="panel" aria-label="Activity">
-    <div class="lens-head"><span>ACTIVITY · from feed (newest first, CT) · tap a row to rewind there</span></div>
+    <div class="lens-head"><span id="activityLabel">Activity</span><select id="historyDay" aria-label="History day"></select></div>
     <ul id="log"></ul>
   </section>
 
@@ -453,10 +474,9 @@
       var meta = wbEl('div', 'wmeta');
       meta.appendChild(wbEl('span', '', (c.owner || '-') + ' · ' + (c.pinned ? (c.section || 'pinned') : c.stage + (c.state !== 'live' ? ' · ' + c.state : ''))));
       if (c.pinned) meta.appendChild(wbEl('span', 'wbadge pin', 'pinned'));
-      else if (c.packet_ok === false) meta.appendChild(wbEl('span', 'wbadge', 'no packet'));
-      if (c.state === 'held') meta.appendChild(wbEl('span', 'wbadge held', 'HELD'));
-      if (c.stall) meta.appendChild(wbEl('span', 'wbadge stall', 'stall 60m+'));
-      if (c.nudge) meta.appendChild(wbEl('span', 'wbadge nudge', '\u23F0 nudge L' + c.nudge));
+      else if (c.packet_ok === false) meta.appendChild(wbEl('span', 'wbadge', 'needs a brief'));
+      if (c.state === 'held') meta.appendChild(wbEl('span', 'wbadge held', 'On hold'));
+      if (c.stall) meta.appendChild(wbEl('span', 'wbadge stall', 'quiet 60 min+'));
       li.appendChild(meta);
       var det = wbEl('div', 'wdetail'), dl = wbEl('dl');
       WB_PACKET.forEach(function (f) { var v = (c.packet || {})[f]; if (!v && !(f === 'acceptance' || f === 'next owner')) return;
@@ -502,12 +522,12 @@
       seats.push(g.name); bySeat[g.name] = g.cards;
     });
     seats.sort(function (a, b) { return String(L.LABEL[a] || a).localeCompare(String(L.LABEL[b] || b)); });
-    var bucketName = { waiting: 'waiting on this seat', review: 'in review', held: 'held' };
+      var bucketName = { waiting: 'waiting on this seat', review: 'in review', held: 'on hold', parked: 'parked' };
     seats.forEach(function (s) {
       body.appendChild(wbEl('div', 'wgroup', L.LABEL[s] || s));
-      var buckets = { waiting: [], review: [], held: [], done: [] };
+      var buckets = { waiting: [], review: [], held: [], parked: [], done: [] };
       bySeat[s].forEach(function (c) { buckets[c._bucket || L.cardBucket(c)].push(c); });
-      ['waiting', 'review', 'held'].forEach(function (b) {
+      ['waiting', 'review', 'held', 'parked'].forEach(function (b) {
         var cs = buckets[b].sort(byBeat); if (!cs.length) return;
         body.appendChild(wbEl('div', 'wsub', bucketName[b] + ' (' + cs.length + ')'));
         var prs = cs.filter(function (c) { return c.kind !== 'issue'; }), iss = cs.filter(function (c) { return c.kind === 'issue'; });
@@ -794,7 +814,8 @@
     window.LIVE_HEADER_ACTIVE = [bots, seatNames.length];
     var total = window.LIVE_FEED_TOTAL != null ? window.LIVE_FEED_TOTAL : state.events.length;
     var st = state.generatedAt ? 'Updated <b title="' + L.fmtCt(state.generatedAt) + '">' + L.ago(now - state.generatedAt) + '</b>' : 'Waiting for feed';
-    st += ' · ' + Number(total).toLocaleString('en-US') + ' events · ' + bots + ' of ' + seatNames.length + ' bots active';
+    st += ' · ' + Number(total).toLocaleString('en-US') + ' events · ' + bots + ' of ' + seatNames.length + ' seats active';
+    paintFresh(now);
     if (fetchError) st += ' · <span style="color:#ff6e5a">' + fetchError + '</span>';
     $('status').innerHTML = st;
   }
@@ -856,12 +877,145 @@
     requestAnimationFrame(frame);
   }
 
+  var light = { dataAt: 0, cardsAt: 0, moveAt: 0 };
+  var feedLoaded = false;
+  function paintFresh(now) {
+    var box = $('fresh'), text = $('freshText');
+    if (!box || !text) return;
+    var tone = '', line = 'Loading…';
+    if (feedLoaded && L.freshTone) {
+      var painted = L.freshTone(light.dataAt, light.cardsAt, light.moveAt, now);
+      tone = painted.tone;
+      line = painted.line;
+    }
+    box.classList.remove('green', 'amber', 'red');
+    if (tone) box.classList.add(tone);
+    text.textContent = line;
+  }
+  function renderQueue(lines) {
+    var ul = $('queueList'), lab = $('queueLabel');
+    if (!ul) return;
+    ul.textContent = '';
+    var rows = (lines || []).filter(function (l) { return l && l.type !== 'nudge'; });
+    if (lab) lab.textContent = 'Queue · waiting for a reply';
+    if (!rows.length) { ul.appendChild(wbEl('li', '', 'Nothing waiting for a reply')); return; }
+    rows.forEach(function (l) {
+      var li = document.createElement('li');
+      li.appendChild(wbEl('span', 'who', l.seat || ''));
+      li.appendChild(wbEl('span', '', l.title || l.id || ''));
+      ul.appendChild(li);
+    });
+  }
+  var cardHistRows = [], cardHistOn = false;
+  function recentState(s) {
+    if (s === 'review') return 'in review';
+    if (s === 'held') return 'on hold';
+    if (s === 'parked') return 'parked';
+    if (s === 'closed') return 'closed';
+    return s || '';
+  }
+  function renderCardRecent() {
+    var ul = $('cardRecentList'); if (!ul) return;
+    ul.textContent = '';
+    var rows = cardHistRows.filter(function (c) { return c && c.state && c.state !== 'live' && c.state !== 'open'; }).slice(0, 5);
+    if (!rows.length) { ul.appendChild(wbEl('li', '', 'No recent changes')); return; }
+    rows.forEach(function (c) {
+      var li = document.createElement('li');
+      li.appendChild(wbEl('span', 'who', c.owner || ''));
+      li.appendChild(wbEl('span', '', recentState(c.state)));
+      li.appendChild(wbEl('span', '', c.title || c.id || ''));
+      if (c.closed_ct) li.appendChild(wbEl('span', 'when', 'closed ' + c.closed_ct));
+      ul.appendChild(li);
+    });
+  }
+  function renderCardHist() {
+    var ul = $('cardHistList'); if (!ul) return;
+    ul.textContent = '';
+    if (!cardHistRows.length) { ul.appendChild(wbEl('li', '', 'No cards')); return; }
+    cardHistRows.forEach(function (c) {
+      var li = document.createElement('li');
+      li.appendChild(wbEl('span', 'who', c.owner || ''));
+      li.appendChild(wbEl('span', '', recentState(c.state)));
+      li.appendChild(wbEl('span', '', c.title || c.id || ''));
+      if (c.closed_ct) li.appendChild(wbEl('span', 'when', 'closed ' + c.closed_ct));
+      ul.appendChild(li);
+    });
+  }
+  function loadCardHist() {
+    fetch('/history/cards', { headers: { Accept: 'application/json' } }).then(function (r) {
+      if (!r.ok) return null;
+      return r.json();
+    }).then(function (b) {
+      if (!b || !Array.isArray(b.cards)) return;
+      cardHistRows = b.cards;
+      renderCardRecent();
+      renderCardHist();
+    }).catch(function () {});
+  }
+  var histBtn = $('cardHistAll');
+  if (histBtn) histBtn.addEventListener('click', function () {
+    cardHistOn = !cardHistOn;
+    var box = $('cardHist'); if (box) box.hidden = !cardHistOn;
+    var recent = $('cardRecent'); if (recent) recent.hidden = cardHistOn;
+  });
+  function loadHistoryDays() {
+    var sel = $('historyDay'); if (!sel) return;
+    fetch('/history', { headers: { Accept: 'application/json' } }).then(function (r) {
+      if (!r.ok) return null;
+      return r.json();
+    }).then(function (b) {
+      if (!b || !Array.isArray(b.days)) return;
+      var keep = sel.value;
+      sel.textContent = '';
+      var live = document.createElement('option'); live.value = ''; live.textContent = 'Live'; sel.appendChild(live);
+      for (var i = b.days.length - 1; i >= 0; i--) {
+        var o = document.createElement('option'); o.value = b.days[i]; o.textContent = b.days[i]; sel.appendChild(o);
+      }
+      if (keep) sel.value = keep;
+    }).catch(function () {});
+  }
+  var historySel = $('historyDay');
+  if (historySel) {
+    historySel.addEventListener('focus', loadHistoryDays);
+    historySel.addEventListener('change', function () {
+      var day = historySel.value;
+      var lab = $('activityLabel');
+      if (!day) { if (lab) lab.textContent = 'Activity'; lastLogKey = ''; return; }
+      fetch('/history?date=' + encodeURIComponent(day), { headers: { Accept: 'application/json' } }).then(function (r) {
+        if (!r.ok) return null;
+        return r.json();
+      }).then(function (b) {
+        if (!b || historySel.value !== day) return;
+        if (lab) lab.textContent = 'History · ' + day;
+        var ul = $('log'); if (!ul) return;
+        ul.textContent = '';
+        var events = b.events || [];
+        if (!events.length) { ul.appendChild(wbEl('li', '', 'No events this day')); return; }
+        events.slice().sort(function (a, b) { return (Date.parse(b.t_ct) || 0) - (Date.parse(a.t_ct) || 0); }).forEach(function (e) {
+          var li = document.createElement('li');
+          li.appendChild(wbEl('span', 'when', e.t_ct || ''));
+          li.appendChild(wbEl('span', 'who', e.from || ''));
+          li.appendChild(wbEl('span', '', e.label || e.kind || ''));
+          ul.appendChild(li);
+        });
+      }).catch(function () {});
+    });
+  }
+  loadHistoryDays();
+  loadCardHist();
   var first = true;
   function poll() {
     if (document.hidden && !first) return;
     L.fetchFeed(window.fetch.bind(window), Date.now(), mem).then(function (r) {
       source = r.source; fetchError = '';
       if (!r.feed) return;
+      feedLoaded = true;
+      if (r.feed.freshness) {
+        light.dataAt = Date.parse(r.feed.freshness.github_latest_ct || '') || 0;
+        light.cardsAt = Date.parse(r.feed.freshness.cards_at || '') || 0;
+        light.moveAt = Date.parse(r.feed.freshness.github_card_latest_ct || '') || 0;
+      }
+      if (Array.isArray(r.feed.queue)) renderQueue(r.feed.queue);
       var out = L.applyFeed(state, r.feed, Date.now());
       state = out.state;
       window.LIVE_CLOCK = r.feed.clock || null;

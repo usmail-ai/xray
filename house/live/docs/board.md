@@ -96,3 +96,13 @@ A seat shows ACTIVE when, within the fleet window (15 min), any of these happene
 The wake / read / ack times are kept in server memory (`app/presence.mjs` `foldSeatTouch`), so after a restart they rebuild on each seat's next wake, read or ack.
 
 **Known gap.** Work a seat does on its own computer (a desktop turn with no wake, read or ack) does not report yet, so the seat can look idle while busy. Lap 3 fix: `live-inbox` sends a heartbeat on every wake and every task start.
+
+## Freshness
+
+The light at the top uses two times from the feed `freshness` object. `github_latest_ct` is the newest GitHub event of any kind. `github_card_latest_ct` is the newest event that both moves a card and lands on an open card (`repo#number`, or a 7-character sha against that card's `head`). A comment, a check that is still running, an ordinary label, or CI on a merge commit (no pull request number, sha no open card owns) does not turn the light. `/healthz` `data_age` is seconds since `github_latest_ct`.
+
+Until the first card write the light says "Cards still building".
+
+## History and the queue
+
+`GET /history` lists archive days. `GET /history?date=YYYY-MM-DD` returns that day's events. `GET /history/cards` returns the latest version of each card. Card versions are append-only (`key` + stage + state + the card's own update time). A row with no key is not stored. The open queue is a view of unacked inbox lines. Filtering it does not delete the inbox file. Lines older than the live window stay in the daily archive.

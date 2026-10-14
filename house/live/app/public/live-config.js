@@ -162,13 +162,8 @@
     });
     return out;
   };
-  // Board bucket for a card under its seat.
-  L.cardBucket = function (c) {
-    if (c.state === 'closed' || c.state === 'parked' || c.stage === 'done') return 'done';
-    if (c.state === 'held') return 'held';
-    if (c.stage === 'review') return 'review';
-    return 'waiting';
-  };
+  // Board bucket for a card under its seat. Parked stays visible (not folded into done).
+  // The function is assigned after seatView so a parked card is its own bucket.
   // Seat groups for the board: each card under its seat (next owner, else owner); a card in review is ALSO waiting
   // on the review seat (L.REVIEW_SEAT, e.g. critic), so the reviewer's group shows its queue, not only its done cards.
   L.REVIEW_SEAT = null;
@@ -190,5 +185,35 @@
   var SEAT_WORD = { working: 'WORKING', live: 'LIVE', active: 'ACTIVE', idle: 'IDLE' };
   L.seatView = function (st) {   // everything the chip and the node show, from that one state
     return { word: SEAT_WORD[st] || 'IDLE', lit: st !== 'idle', blink: st === 'working', nodeWorking: st === 'working' };
+  };
+  function freshClock(ms) {
+    var m = Math.max(1, Math.round(ms / 60000));
+    if (m < 60) return m + ' min';
+    var h = Math.round(m / 60);
+    if (h < 48) return h + ' h';
+    return Math.round(h / 24) + ' d';
+  }
+  // dataAt is the newest GitHub event. moveAt is the newest event that lands on an open card.
+  // A comment, a running check, an ordinary label, or CI on a merge commit does not turn the light.
+  L.freshTone = function (dataAt, cardsAt, moveAt, now) {
+    if (!(cardsAt > 0)) return { tone: 'amber', line: 'Cards still building' };
+    if (!(dataAt > 0)) return { tone: 'amber', line: 'No GitHub activity yet' };
+    var dataAge = Math.max(0, now - dataAt);
+    var cardAge = Math.max(0, now - cardsAt);
+    var cardsBehind = moveAt > cardsAt + 120000;
+    if (cardsBehind && cardAge >= 3600000) return { tone: 'red', line: 'Cards last changed ' + freshClock(cardAge) + ' ago' };
+    if (dataAge >= 3 * 3600000) return { tone: 'red', line: 'No new GitHub activity in ' + freshClock(dataAge) };
+    if (cardsBehind) return { tone: 'amber', line: 'Cards last changed ' + freshClock(cardAge) + ' ago' };
+    if (dataAge < 60000) return { tone: 'green', line: 'Updated just now' };
+    if (dataAge < 30 * 60000) return { tone: 'green', line: 'Updated ' + freshClock(dataAge) + ' ago' };
+    return { tone: 'amber', line: 'Updated ' + freshClock(dataAge) + ' ago' };
+  };
+  L.cardBucket = function (c) {
+    if (!c) return 'waiting';
+    if (c.state === 'parked') return 'parked';
+    if (c.state === 'closed' || c.stage === 'done') return 'done';
+    if (c.state === 'held') return 'held';
+    if (c.stage === 'review') return 'review';
+    return 'waiting';
   };
 })(window.LiveMesh);

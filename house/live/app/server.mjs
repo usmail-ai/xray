@@ -13,7 +13,7 @@ import { parseAllowlist, mergeCards, sourceCardsFrom, projectAllowed, validateIt
 import { checkRoutesFromDir, readRoutingMap, createLoginResolver, auditLogins } from './routes.mjs';
 import { fingerprint, tripwire, createClock } from './governor.mjs';
 const COLLECTOR_DIR_EARLY = () => path.join(path.dirname(fileURLToPath(import.meta.url)), 'collector');
-import { initArchive, appendArchive, backfillArchive, readArchive, validArchiveDate, KINDS as ARCHIVE_KINDS } from './archive.mjs';
+import { initArchive, appendArchive, backfillArchive, readArchive, validArchiveDate, KINDS as ARCHIVE_KINDS, cardHistory, archiveDays } from './archive.mjs';
 import { pinnedOrigin } from './origin.mjs';
 
 const PORT = Number(process.env.PORT) || 8080;
@@ -546,6 +546,8 @@ function dotsFleet(fleet, now = Date.now()) {   // Assistant node state, merged 
 // cards: the collector waveboard, plus one card per accepted source item. A collector pass replaces only the wave cards.
 let waveCards = []; let bfCards = []; let nudges = []; let waveSig = ''; let boardSig = '';
 let cardsAt = 0;
+let githubDataAt = 0;
+let githubCardAt = 0;
 try {
   const cardsPath = path.join(STATE_DIR, 'cards.json');
   const parsed = JSON.parse(fs.readFileSync(cardsPath, 'utf8'));
@@ -597,7 +599,13 @@ function publishBoard(updatedCt) {
   bfCards = merged; cardsAt = Date.now();
   const stamp = updatedCt || new Date().toISOString();
   bfWrite('cards.json', JSON.stringify({ updated_ct: stamp, cards: bfCards }));
-  for (const c of bfCards) appendArchive('cards', c && c.t_ct ? c : { ...c, t_ct: stamp });
+  for (const c of bfCards) {
+    if (!c || c.kind === 'source') continue;
+    const beat = Number(c.last_beat_t);
+    const updated = Number.isFinite(beat) && beat > 0 ? new Date(beat).toISOString() : (typeof c.updated_ct === 'string' ? c.updated_ct : '');
+    appendArchive('cards', { ...c, t_ct: updated || c.t_ct || stamp, updated_ct: updated });
+  }
+  recomputeGithubDataAt();
 }
 function setCards(wb) {
   if (!wb || !Array.isArray(wb.cards)) return;
@@ -775,7 +783,29 @@ function mergedHeader(now = Date.now()) {
   if (fleet) { if (b && !stale) evalSilent(fleet, now); h.fleet = fleet; }   // only with a fresh box view (no restart flaps)
   const df = dotsFleet(h.fleet, now); if (df) h.fleet = df;
   const tf = foldSeatTouch(h.fleet, seatTouch, now); if (tf) h.fleet = tf;   // wake / read / ack activity
+  h.freshness = {
+    github_latest_ct: githubDataAt ? new Date(githubDataAt).toISOString() : null,
+    github_card_latest_ct: githubCardAt ? new Date(githubCardAt).toISOString() : null,
+    cards_at: cardsAt ? new Date(cardsAt).toISOString() : null,
+  };
+  h.queue = openQueue();
   return h;
+}
+function openQueue() {
+  const lines = [];
+  for (const seat of SEAT_IDS) {
+    for (const l of openLines(seat)) {
+      if (!l || l.id == null) continue;
+      lines.push({
+        id: String(l.id).slice(0, 120), seat,
+        title: String(l.title || '').slice(0, 120),
+        t_ct: typeof l.t_ct === 'string' ? l.t_ct : '',
+        type: typeof l.type === 'string' ? l.type : '',
+      });
+    }
+  }
+  lines.sort((a, b) => (Date.parse(a.t_ct) || 0) - (Date.parse(b.t_ct) || 0));
+  return lines.slice(0, 200);
 }
 // active windows and box staleness move with the clock: re-merge every 15 s, publish only on a real change
 const fleetSig = h => JSON.stringify([h.fleet && { ...h.fleet, as_of: 0 }, h.sources?.box?.stale, nudges.length, nudges.filter(n => n.closed_at).length]);
@@ -1041,14 +1071,62 @@ function repoTimes(f) {
   }
 }
 const ageS = t => (t > 0 ? Math.max(0, Math.round((Date.now() - t) / 1000)) : null);
-let githubDataAt = 0;
+function sha7(v) {
+  const hex = String(v || '').toLowerCase().replace(/[^0-9a-f]/g, '');
+  return hex.length >= 7 ? hex.slice(0, 7) : '';
+}
+function eventMovesCard(e) {
+  if (!e || typeof e !== 'object') return false;
+  const k = typeof e.kind === 'string' ? e.kind : '';
+  if (/watcher|turn|subagent/.test(k)) return false;
+  if (k === 'pr_open' || k === 'issue_open' || k === 'pr_commit' || k === 'pr_force_push' || k === 'pr_update' || k === 'merged') return true;
+  if (k.startsWith('critic_')) return true;
+  if ((k === 'check_run' || k === 'workflow_run' || k === 'ci_pass' || k === 'ci_fail') && (e.conclusion || k.startsWith('ci_'))) return true;
+  if (k.startsWith('lab_retest_')) return true;
+  if (k.startsWith('prompt') && e.from === 'Lead') return true;
+  if ((k === 'issue_labeled' || k === 'pr_labeled') && /block/i.test(String(e.detail || ''))) return true;
+  if (k.includes('blocker')) return true;
+  return false;
+}
+function openCardIndex() {
+  const keys = new Set();
+  const heads = new Set();
+  for (const c of bfCards) {
+    if (!c || typeof c !== 'object' || c.kind === 'source' || c.state === 'closed') continue;
+    let repo = typeof c.repo === 'string' ? c.repo.trim().toLowerCase() : '';
+    let n = Number(c.number);
+    if (!(repo && Number.isInteger(n) && n > 0) && typeof c.key === 'string') {
+      const m = /^([^#]+)#([1-9]\d*)$/.exec(c.key.trim().toLowerCase());
+      if (m) { repo = m[1]; n = Number(m[2]); }
+    }
+    if (!(repo && Number.isInteger(n) && n > 0)) continue;
+    keys.add(repo + '#' + n);
+    const head = sha7(c.head);
+    if (head) heads.add(repo + '@' + head);
+  }
+  return { keys, heads };
+}
+function eventOnOpenCard(e, open) {
+  const repo = e && typeof e.repo === 'string' ? e.repo.trim().toLowerCase() : '';
+  if (!repo) return false;
+  const n = Number(e.number);
+  if (e.number != null && e.number !== '' && Number.isInteger(n) && n > 0) return open.keys.has(repo + '#' + n);
+  const k = typeof e.kind === 'string' ? e.kind : '';
+  if (k !== 'check_run' && k !== 'workflow_run' && k !== 'ci_pass' && k !== 'ci_fail') return false;
+  const sha = sha7(e.sha || e.head_sha);
+  return !!sha && open.heads.has(repo + '@' + sha);
+}
 function recomputeGithubDataAt() {
-  let best = 0;
+  const open = openCardIndex();
+  let best = 0, card = 0;
   for (const e of SRCS.github.evs.values()) {
-    const t = Date.parse(e && e.t_ct);
-    if (Number.isFinite(t) && t > best) best = t;
+    const t = Date.parse(e && typeof e.t_ct === 'string' ? e.t_ct : '');
+    if (!Number.isFinite(t) || t <= 0) continue;
+    if (t > best) best = t;
+    if (t > card && eventMovesCard(e) && eventOnOpenCard(e, open)) card = t;
   }
   githubDataAt = best;
+  githubCardAt = card;
 }
 function boardWord() {
   if (cardsAt === 0) return 'building';
@@ -1472,6 +1550,14 @@ async function handle(req, res) {
     if (!validArchiveDate(date) || !ARCHIVE_KINDS.includes(kind)) return json(req, res, 400, { error: 'bad date or kind' });
     return json(req, res, 200, { date, kind, lines: readArchive(date, kind).lines });
   }
+  if ((p === '/history' || p === '/history/cards') && m === 'GET') {
+    if (!validSession(req)) return json(req, res, 401, { error: 'unauthorized' });
+    if (p === '/history/cards') return json(req, res, 200, cardHistory());
+    const date = url.searchParams.get('date') || '';
+    if (!date) return json(req, res, 200, { days: archiveDays() });
+    if (!validArchiveDate(date)) return json(req, res, 400, { error: 'bad date' });
+    return json(req, res, 200, { date, events: readArchive(date, 'events').lines });
+  }
   if (p === '/robots.txt' && (m === 'GET' || m === 'HEAD')) return send(req, res, 200, 'text/plain; charset=utf-8', 'User-agent: *\nDisallow: /\n');
 
   if (p === '/ingest' || p === '/ingest/delta') {
@@ -1564,6 +1650,7 @@ async function handle(req, res) {
     if (typeof hs !== 'string' || !hs || !safeEq(hs, INGEST_SECRET)) { req.resume(); return json(req, res, 401, { error: 'unauthorized' }); }
     let parsed; try { parsed = JSON.parse((await readBody(req, 4 << 20)).toString('utf8')); } catch { return json(req, res, 400, { error: 'not json' }); }
     const r = postSeatLines(parsed, null);
+    if (r.status === 200) { seq++; header = mergedHeader(); fullDirty = true; }
     return json(req, res, r.status, r.status === 200 ? { ok: true, added: r.added, rejected: r.rejected } : { error: r.error, ...(r.rejected ? { rejected: r.rejected } : {}) });
   }
   if (p === '/ingest/source') {

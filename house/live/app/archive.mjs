@@ -7,7 +7,7 @@ const CAP = 300;
 const DROP = /body|text|message|secret|token|password|authorization/i;
 const FIELDS = {
   events: ['t_ct', 'from', 'to', 'kind', 'direction', 'label', 'source', 'src_file', 'repo', 'number', 'credit', 'status', 'sha', 'actor', 'author'],
-  cards: ['key', 'repo', 'number', 'title', 'url', 'owner', 'stage', 'state', 'kind', 'pinned', 'section', 'stall', 'nudge', 'last_beat_t', 'packet_ok', 'waiting', 'packet', 'hold', 'beats', 't_ct'],
+  cards: ['key', 'repo', 'number', 'title', 'url', 'owner', 'stage', 'state', 'kind', 'pinned', 'section', 'stall', 'nudge', 'last_beat_t', 'packet_ok', 'waiting', 'packet', 'hold', 'beats', 't_ct', 'updated_ct'],
   inbox: ['t_ct', 'seat', 'type', 'repo', 'number', 'sha', 'title', 'url', 'reason'],
   nudges: ['kind', 't', 't_ct', 'card', 'repo', 'number', 'title', 'url', 'stage', 'level', 'seat', 'via', 'beat_t', 'closed_at', 'about'],
   acks: ['seat', 'line', 't_ct'],
@@ -16,6 +16,7 @@ const FIELDS = {
 
 const seen = new Set();
 let root = '';
+let cardCache = null;
 
 export function validArchiveDate(s) {
   if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
@@ -42,7 +43,14 @@ function clip(v, depth = 0) {
 
 export function recordId(kind, row) {
   if (!row || typeof row !== 'object') return '';
-  if (kind === 'cards') return `${row.key}|${row.stage}|${row.state}`;
+  if (kind === 'cards') {
+    const key = typeof row.key === 'string' ? row.key : '';
+    if (!key) return '';
+    const stage = row.stage == null ? '' : String(row.stage);
+    const state = row.state == null ? '' : String(row.state);
+    const updated = typeof row.updated_ct === 'string' ? row.updated_ct : '';
+    return updated ? `${key}|${stage}|${state}|${updated}` : `${key}|${stage}|${state}`;
+  }
   if (kind === 'inbox') return row.id == null ? '' : `${row.seat ?? ''}:${row.id}`;   // ids repeat across seats (builder-cloud copy, multi-seat route)
   if (kind === 'acks') return `${row.seat}:${row.line ?? row.lineId ?? ''}`;
   return row.id == null ? '' : String(row.id);
@@ -114,8 +122,16 @@ export function initArchive(dataDir) {
   root = path.join(dataDir || process.env.MESH_DATA_DIR || '/data', 'archive');
   seen.clear();
   loadedDays.clear();
+  cardCache = null;
   loadSeen();
   return root;
+}
+
+export function archiveDays() {
+  let names;
+  try { names = fs.readdirSync(root); }
+  catch (e) { logRead(e); return []; }
+  return names.filter(validArchiveDate).sort();
 }
 
 export function appendArchive(kind, row) {
@@ -136,7 +152,50 @@ export function appendArchive(kind, row) {
     return false;
   }
   seen.add(key);
+  if (kind === 'cards' && cardCache && typeof rec.key === 'string' && rec.key && rec.kind !== 'source') cardCache.push(rec);
   return true;
+}
+
+function loadCardCache() {
+  if (cardCache) return cardCache;
+  const rows = [];
+  for (const day of archiveDays()) {
+    for (const row of readArchive(day, 'cards').lines) {
+      if (row && typeof row.key === 'string' && row.key && row.kind !== 'source') rows.push(row);
+    }
+  }
+  cardCache = rows;
+  return rows;
+}
+
+/** Latest version of each card. Rows with no key are ignored. Nothing is deleted. */
+export function cardHistory() {
+  const grouped = new Map();
+  for (const row of loadCardCache()) {
+    const arr = grouped.get(row.key);
+    if (arr) arr.push(row); else grouped.set(row.key, [row]);
+  }
+  const cards = [];
+  for (const [key, arr] of grouped) {
+    arr.sort((a, b) => (Date.parse(a.updated_ct || a.t_ct) || 0) - (Date.parse(b.updated_ct || b.t_ct) || 0));
+    const first = arr[0], last = arr[arr.length - 1];
+    const opened = arr.map(row => row.t_ct).filter(s => Number.isFinite(Date.parse(s))).sort()[0] || '';
+    const owner = [...arr].reverse().map(row => (typeof row.owner === 'string' ? row.owner : '')).find(Boolean) || '';
+    const closed = last.state === 'closed';
+    cards.push({
+      id: key, owner, state: typeof last.state === 'string' ? last.state : '',
+      opened_ct: opened, closed_ct: closed ? (last.updated_ct || last.t_ct || '') : '',
+      title: typeof last.title === 'string' ? last.title : '',
+      url: typeof last.url === 'string' ? last.url : '',
+      repo: typeof last.repo === 'string' ? last.repo : '',
+      number: Number.isInteger(last.number) ? last.number : 0,
+      updated_ct: last.updated_ct || last.t_ct || '',
+    });
+  }
+  const owners = [...new Set(cards.map(c => c.owner).filter(Boolean))].sort();
+  const days = [...new Set(cards.flatMap(c => [c.opened_ct, c.closed_ct, c.updated_ct].map(s => String(s || '').slice(0, 10)).filter(validArchiveDate)))].sort();
+  cards.sort((a, b) => (Date.parse(b.updated_ct) || 0) - (Date.parse(a.updated_ct) || 0) || (a.id < b.id ? -1 : 1));
+  return { cards, owners, days };
 }
 
 export function readArchive(date, kind) {
